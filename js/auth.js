@@ -1,32 +1,32 @@
 import { auth, db } from './firebase-config.js';
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 
 export const AuthModule = {
     currentUser: null,
     currentRole: null,
+    userData: null,
 
-    // Инициализация слушателя авторизации
     init(onUserLoaded) {
         onAuthStateChanged(auth, async (user) => {
             if (user) {
                 this.currentUser = user;
-                // Получаем роль пользователя из коллекции пользователей в Firestore
                 const userDoc = await getDoc(doc(db, "users", user.uid));
                 if (userDoc.exists()) {
-                    this.currentRole = userDoc.data().role;
+                    this.userData = userDoc.data();
+                    this.currentRole = this.userData.role;
                 } else {
-                    this.currentRole = "guest"; // Фолбэк, если роль не задана
+                    this.currentRole = "Торговый представитель"; // Роль по умолчанию
                 }
             } else {
                 this.currentUser = null;
                 this.currentRole = null;
+                this.userData = null;
             }
             onUserLoaded(this.currentUser, this.currentRole);
         });
     },
 
-    // Вход по логину (Email) и паролю
     async login(email, password) {
         try {
             await signInWithEmailAndPassword(auth, email, password);
@@ -35,20 +35,40 @@ export const AuthModule = {
         }
     },
 
-    // Выход из системы
+    async register(email, password, name, role) {
+        try {
+            // Создаем пользователя в Firebase Authentication
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            const user = userCredential.user;
+
+            // Сразу же создаем документ в Firestore с привязкой роли
+            await setDoc(doc(db, "users", user.uid), {
+                uid: user.uid,
+                name: name,
+                email: email,
+                role: role,
+                createdAt: new Date().toISOString()
+            });
+            return user;
+        } catch (error) {
+            throw new Error(this.mapAuthError(error.code));
+        }
+    },
+
     async logout() {
         await signOut(auth);
     },
 
-    // Локализация ошибок Firebase Auth
     mapAuthError(code) {
         switch (code) {
             case 'auth/invalid-email': return 'Неверный формат Email.';
             case 'auth/user-not-found':
             case 'auth/wrong-password':
-            case 'auth/invalid-credential':
-                return 'Неверный логин или пароль.';
-            default: return 'Ошибка авторизации. Попробуйте снова.';
+            case 'auth/invalid-credential': return 'Неверный логин или пароль.';
+            case 'auth/email-already-in-reply':
+            case 'auth/email-already-in-use': return 'Этот Email уже зарегистрирован в системе.';
+            case 'auth/weak-password': return 'Слишком слабый пароль (минимум 6 символов).';
+            default: return 'Произошла ошибка. Попробуйте ещё раз.';
         }
     }
 };
