@@ -1,73 +1,80 @@
-import { db } from './firebase-config.js';
-import { collection, getDocs, addDoc, doc, updateDoc, query, where } from 'firebase/firestore';
-
-// Глобальная функция-заглушка для асинхронного вызова Google Maps
-window.initMapDeferred = () => {
-    // Вызывается автоматически, когда скрипт Google Maps загружен
-};
+import { db, auth } from './firebase-config.js';
+import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
 
 export const Pages = {
-    // 1. Главная панель (Дашборд)
+    // --- ГЛАВНАЯ ПАНЕЛЬ (ЖИВАЯ СТАТИСТИКА) ---
     async dashboard() {
         return `
             <div class="stats-grid">
                 <div class="stat-card">
-                    <div class="stat-info"><p>Заявки за сегодня</p><h3 id="dash-orders">...</h3></div>
-                    <div class="stat-icon"><i class="fa-solid fa-file-invoice-dollar"></i></div>
+                    <div class="stat-info"><p>Активные заявки за день</p><h3 id="dash-orders">0</h3></div>
+                    <div class="stat-icon" style="background:#dbeafe; color:#2563eb;"><i class="fa-solid fa-file-invoice-dollar"></i></div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-info"><p>Продажи (тг)</p><h3 id="dash-sales">...</h3></div>
-                    <div class="stat-icon"><i class="fa-solid fa-chart-line"></i></div>
+                    <div class="stat-info"><p>Продажи за сегодня</p><h3 id="dash-sales">0 ₸</h3></div>
+                    <div class="stat-icon" style="background:#d1fae5; color:#059669;"><i class="fa-solid fa-chart-line"></i></div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-info"><p>Торговые в полях</p><h3 id="dash-agents">...</h3></div>
-                    <div class="stat-icon"><i class="fa-solid fa-user-tie"></i></div>
+                    <div class="stat-info"><p>Активные Торговые</p><h3 id="dash-agents">0</h3></div>
+                    <div class="stat-icon" style="background:#fef3c7; color:#d97706;"><i class="fa-solid fa-user-tie"></i></div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-info"><p>Водители на маршруте</p><h3 id="dash-drivers">...</h3></div>
-                    <div class="stat-icon"><i class="fa-solid fa-truck"></i></div>
+                    <div class="stat-info"><p>Водители на маршрутах</p><h3 id="dash-drivers">0</h3></div>
+                    <div class="stat-icon" style="background:#f3e8ff; color:#7c3aed;"><i class="fa-solid fa-truck"></i></div>
                 </div>
             </div>
             <div class="card">
-                <h2>Оперативная сводка CRM</h2>
-                <p>Добро пожаловать в рабочую экосистему компании «Пышка» (Шымкент).</p>
+                <h2>Оперативная деятельность компании «Пышка»</h2>
+                <p style="color:var(--text-muted); margin-top: 10px;">CRM-система запущена в режиме реального времени. Все операции синхронизируются с филиалом в г. Шымкент.</p>
             </div>
         `;
     },
 
-    // Реализация динамики для Дашборда
     async initDashboard() {
-        // Пример чтения данных для сводки
-        const q = query(collection(db, "orders"));
-        const snap = await getDocs(q);
-        document.getElementById('dash-orders').innerText = snap.size;
-        let totalSales = 0;
-        snap.forEach(doc => totalSales += Number(doc.data().total || 0));
-        document.getElementById('dash-sales').innerText = totalSales.toLocaleString() + ' ₸';
-        document.getElementById('dash-agents').innerText = '5'; // Статично или из пула сессий
-        document.getElementById('dash-drivers').innerText = '3';
+        const ordersSnap = await getDocs(collection(db, "orders"));
+        const usersSnap = await getDocs(collection(db, "users"));
+
+        let dailyOrdersCount = 0;
+        let dailySalesVolume = 0;
+        ordersSnap.forEach(d => {
+            const data = d.data();
+            dailyOrdersCount++;
+            dailySalesVolume += Number(data.total || 0);
+        });
+
+        let agentsCount = 0;
+        let driversCount = 0;
+        usersSnap.forEach(d => {
+            const u = d.data();
+            if (u.role === 'Торговый представитель') agentsCount++;
+            if (u.role === 'Водитель') driversCount++;
+        });
+
+        document.getElementById('dash-orders').innerText = dailyOrdersCount;
+        document.getElementById('dash-sales').innerText = dailySalesVolume.toLocaleString() + ' ₸';
+        document.getElementById('dash-agents').innerText = agentsCount;
+        document.getElementById('dash-drivers').innerText = driversCount;
     },
 
-    // 2. Клиенты (АКБ / ОКБ разделение по флагам)
+    // --- УЧЁТ КЛИЕНТСКИХ БАЗ (АКБ / ОКБ) ---
     async clients(type) {
         return `
             <div class="card">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-                    <h2>${type === 'akb' ? 'Активная клиентская база (АКБ)' : 'Общая клиентская база (ОКБ)'}</h2>
-                </div>
+                <h2>${type === 'akb' ? 'Активная клиентская база (АКБ)' : 'Общая клиентская база (ОКБ)'}</h2>
+                <p style="color:var(--text-muted); margin-bottom:20px;">Список торговых точек, закрепленных в системе.</p>
                 <div class="table-responsive">
                     <table>
                         <thead>
                             <tr>
-                                <th>Магазин</th>
+                                <th>Название магазина</th>
                                 <th>ИП</th>
                                 <th>Адрес</th>
-                                <th>Телефон</th>
+                                <th>Телефон владельца</th>
                                 <th>Статус</th>
                             </tr>
                         </thead>
                         <tbody id="clients-table-body">
-                            <tr><td colspan="5">Загрузка клиентов...</td></tr>
+                            <tr><td colspan="5">Загрузка данных из Firestore...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -77,16 +84,16 @@ export const Pages = {
 
     async initClients(type) {
         const tbody = document.getElementById('clients-table-body');
-        // Фильтруем по типу базы, если в доке настроено полеisActive
-        const q = query(collection(db, "clients"), where("type", "==", type));
-        const snap = await getDocs(q);
+        const snap = await getDocs(collection(db, "clients"));
         tbody.innerHTML = '';
-        if(snap.empty) {
-            tbody.innerHTML = `<tr><td colspan="5">Клиенты не найдены.</td></tr>`;
-            return;
-        }
+
+        let hasContent = false;
         snap.forEach(docSnap => {
             const c = docSnap.data();
+            // АКБ — точки со статусом "Активен", ОКБ — абсолютно все (включая потенциальные)
+            if (type === 'akb' && c.status !== 'Активен') return;
+            hasContent = true;
+
             tbody.innerHTML += `
                 <tr>
                     <td><strong>${c.name}</strong></td>
@@ -97,43 +104,47 @@ export const Pages = {
                 </tr>
             `;
         });
+
+        if (!hasContent) {
+            tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">База данных пуста.</td></tr>`;
+        }
     },
 
-    // 3. Создание заявок (Для торговых представителей)
+    // --- СОЗДАНИЕ ЗАЯВОК ТОРГОВЫМ ПРЕДСТАВИТЕЛЕМ ---
     async createOrder() {
         return `
-            <div class="card" style="max-width: 600px; margin: 0 auto;">
-                <h2>Создать новую заявку</h2>
+            <div class="card" style="max-width: 650px; margin: 0 auto;">
+                <h2>Оформление новой заявки на поставку</h2>
                 <form id="order-form" style="margin-top:20px;">
                     <div class="form-group">
                         <label>Название магазина</label>
-                        <input type="text" id="ord-name" required placeholder="Магазин 'Вкусный'">
+                        <input type="text" id="ord-name" required placeholder="Магазин 'Арман'">
                     </div>
                     <div class="form-group">
-                        <label>ИП</label>
-                        <input type="text" id="ord-ip" required placeholder="ИП Мамедов">
+                        <label>ИП владельца</label>
+                        <input type="text" id="ord-ip" required placeholder="ИП Смаилов">
                     </div>
                     <div class="form-group">
-                        <label>Точный адрес</label>
-                        <input type="text" id="ord-address" required placeholder="г. Шымкент, ул. Аймаутова 12">
+                        <label>Точный адрес в г. Шымкент</label>
+                        <input type="text" id="ord-address" required placeholder="ул. Рыскулова, дом 45">
                     </div>
                     <div class="form-group">
                         <label>Телефон владельца</label>
-                        <input type="text" id="ord-phone" required placeholder="+7 (707) 123-4567">
+                        <input type="text" id="ord-phone" required placeholder="+7 (701) 555-4433">
                     </div>
                     <div class="form-group">
-                        <label>Список товаров (Позиции, кол-во)</label>
-                        <textarea id="ord-items" rows="3" required placeholder="Хлеб формовой - 50 шт, Баурсаки - 5 кг"></textarea>
+                        <label>Список хлебобулочных изделий (Наименование, количество)</label>
+                        <textarea id="ord-items" rows="3" required placeholder="Пышки — 100 шт, Булки — 50 шт"></textarea>
                     </div>
                     <div class="form-group">
-                        <label>Общая сумма заявки (₸)</label>
-                        <input type="number" id="ord-total" required placeholder="15000">
+                        <label>Общая сумма заказа (₸)</label>
+                        <input type="number" id="ord-total" required placeholder="25000">
                     </div>
                     <div class="form-group">
-                        <label>Комментарий</label>
-                        <textarea id="ord-comment" rows="2"></textarea>
+                        <label>Комментарий для логиста/водителя</label>
+                        <textarea id="ord-comment" rows="2" placeholder="Доставка строго до 09:00 утра"></textarea>
                     </div>
-                    <button type="submit" class="btn btn-primary btn-block">Отправить заявку в Firestore</button>
+                    <button type="submit" class="btn btn-primary btn-block">Сохранить и передать на доставку</button>
                 </form>
             </div>
         `;
@@ -142,84 +153,136 @@ export const Pages = {
     async initCreateOrder() {
         document.getElementById('order-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const orderData = {
-                name: document.getElementById('ord-name').value,
-                ip: document.getElementById('ord-ip').value,
-                address: document.getElementById('ord-address').value,
-                phone: document.getElementById('ord-phone').value,
-                items: document.getElementById('ord-items').value,
-                total: Number(document.getElementById('ord-total').value),
-                comment: document.getElementById('ord-comment').value,
+            
+            const name = document.getElementById('ord-name').value;
+            const ip = document.getElementById('ord-ip').value;
+            const address = document.getElementById('ord-address').value;
+            const phone = document.getElementById('ord-phone').value;
+            const items = document.getElementById('ord-items').value;
+            const total = Number(document.getElementById('ord-total').value);
+            const comment = document.getElementById('ord-comment').value;
+
+            // 1. Сохраняем заявку в общую ленту заказов
+            await addDoc(collection(db, "orders"), {
+                name, ip, address, phone, items, total, comment,
                 status: 'Новая',
+                agentEmail: auth.currentUser ? auth.currentUser.email : 'Система',
                 createdAt: new Date().toISOString()
-            };
-            await addDoc(collection(db, "orders"), orderData);
-            alert('Заявка успешно сохранена!');
+            });
+
+            // 2. Дублируем клиента в общую базу клиентов (ОКБ), если его там еще нет
+            await addDoc(collection(db, "clients"), {
+                name, ip, address, phone,
+                status: 'Активен'
+            });
+
+            alert('Заявка успешно отправлена на склад и добавлена в базу клиентов!');
             document.getElementById('order-form').reset();
         });
     },
 
-    // 4. Интерактивная карта (Google Maps)
+    // --- РАБОЧАЯ ГЕОКАРТА (GOOGLE MAPS) ---
     async map() {
         return `
             <div class="card">
-                <h2>Логистическая карта доставки (Шымкент)</h2>
-                <div style="margin-bottom:15px; color:var(--text-muted);">Визуализация торговых точек и построенных маршрутов доставки.</div>
-                <div id="google-map" class="map-container"></div>
+                <h2>Живая карта логистики Шымкента</h2>
+                <p style="color:var(--text-muted); margin-bottom:15px;">Автоматическая генерация маркеров заявок и трассировка путей доставки.</p>
+                <div id="google-map" class="map-container" style="height: 550px;"></div>
             </div>
         `;
     },
 
     async initMapPage() {
-        // Центр г. Шымкент по умолчанию
-        const shymkentCoords = { lat: 42.3417, lng: 69.5901 };
+        const shymkentCenter = { lat: 42.3174, lng: 69.5901 }; // Координаты центра Шымкента
         
-        if (typeof google !== 'undefined' && google.maps) {
-            const map = new google.maps.Map(document.getElementById("google-map"), {
-                zoom: 12,
-                center: shymkentCoords,
-                styles: [
-                    { "featureType": "administrative", "elementType": "labels.text.fill", "stylers": [{ "color": "#444444" }] }
-                ]
-            });
+        if (typeof google === 'undefined' || !google.maps) {
+            document.getElementById('google-map').innerHTML = `<p style="padding:20px; color:red;">Ошибка загрузки Google Maps API. Проверьте ваш API Ключ в index.html.</p>`;
+            return;
+        }
 
-            // Загружаем заказы из Firestore для расстановки маркеров мест доставки
-            const snap = await getDocs(collection(db, "orders"));
-            snap.forEach(docSnap => {
-                const order = docSnap.data();
-                // Для полноценного геокодирования адреса в координаты на проде используйте google.maps.Geocoder
-                // В демонстрационных целях ставим маркер со смещением вокруг центра
-                const randomOffsetLat = (Math.random() - 0.5) * 0.05;
-                const randomOffsetLng = (Math.random() - 0.5) * 0.05;
-                
-                new google.maps.Marker({
-                    position: { lat: shymkentCoords.lat + randomOffsetLat, lng: shymkentCoords.lng + randomOffsetLng },
-                    map: map,
-                    title: order.name,
-                    label: order.name[0]
+        const map = new google.maps.Map(document.getElementById("google-map"), {
+            zoom: 12,
+            center: shymkentCenter
+        });
+
+        const geocoder = new google.maps.Geocoder();
+        const directionsService = new google.maps.DirectionsService();
+        const directionsRenderer = new google.maps.DirectionsRenderer({ map: map, suppressMarkers: true });
+
+        const snap = await getDocs(collection(db, "orders"));
+        const waypoints = [];
+
+        for (const docSnap of snap.docs) {
+            const order = docSnap.data();
+            const fullAddress = order.address.includes("Шымкент") ? order.address : `Казахстан, Шымкент, ${order.address}`;
+
+            // Геокодируем адрес на лету
+            await new Promise((resolve) => {
+                geocoder.geocode({ address: fullAddress }, (results, status) => {
+                    if (status === 'OK' && results[0]) {
+                        const position = results[0].geometry.location;
+                        waypoints.push({ location: position, stopover: true });
+
+                        // Ставим маркер магазина
+                        const marker = new google.maps.Marker({
+                            position: position,
+                            map: map,
+                            title: order.name,
+                            icon: 'https://maps.google.com/mapfiles/ms/icons/purple-dot.png'
+                        });
+
+                        const infoWindow = new google.maps.InfoWindow({
+                            content: `<strong>${order.name}</strong><br>${order.address}<br>Сумма: ${order.total} ₸<br>Статус: <b>${order.status}</b>`
+                        });
+
+                        marker.addListener('click', () => infoWindow.open(map, marker));
+                    }
+                    setTimeout(resolve, 200); // Защита от лимитов запросов (Query Limit)
                 });
+            });
+        }
+
+        // Если есть хотя бы 2 заявки — строим оптимальный маршрут доставки для водителя по дорогам
+        if (waypoints.length >= 2) {
+            const origin = waypoints[0].location;
+            const destination = waypoints[waypoints.length - 1].location;
+            const midPoints = waypoints.slice(1, waypoints.length - 1);
+
+            directionsService.route({
+                origin: origin,
+                destination: destination,
+                waypoints: midPoints,
+                optimizeWaypoints: true,
+                travelMode: google.maps.TravelMode.DRIVING
+            }, (response, status) => {
+                if (status === 'OK') {
+                    directionsRenderer.setDirections(response);
+                }
             });
         }
     },
 
-    // 5. Модуль Водителя
+    // --- МОДУЛЬ ДЛЯ ВОДИТЕЛЕЙ (УПРАВЛЕНИЕ СТАТУСАМИ ДОСТАВКИ) ---
     async driver() {
         return `
             <div class="card">
-                <h2>Маршрутный лист водителя</h2>
-                <div class="table-responsive" style="margin-top:20px;">
+                <h2>Ваш текущий путевой лист заказов</h2>
+                <p style="color:var(--text-muted); margin-bottom: 20px;">Меняйте статус заказа по мере продвижения по маршруту.</p>
+                <div class="table-responsive">
                     <table>
                         <thead>
                             <tr>
                                 <th>Магазин</th>
-                                <th>Адрес</th>
+                                <th>Адрес доставки</th>
                                 <th>Телефон</th>
-                                <th>Сумма</th>
-                                <th>Статус</th>
-                                <th>Действие</th>
+                                <th>Сумма заказа</th>
+                                <th>Текущий статус</th>
+                                <th>Изменить статус</th>
                             </tr>
                         </thead>
-                        <tbody id="driver-table-body"></tbody>
+                        <tbody id="driver-table-body">
+                            <tr><td colspan="6">Загрузка ваших путевых листов...</td></tr>
+                        </tbody>
                     </table>
                 </div>
             </div>
@@ -230,25 +293,30 @@ export const Pages = {
         const tbody = document.getElementById('driver-table-body');
         const snap = await getDocs(collection(db, "orders"));
         tbody.innerHTML = '';
-        
+
+        if (snap.empty) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">Назначенных заявок на сегодня нет.</td></tr>`;
+            return;
+        }
+
         snap.forEach(docSnap => {
             const id = docSnap.id;
             const o = docSnap.data();
             
-            let statusClass = 'badge-new';
-            if(o.status === 'Принята') statusClass = 'badge-accepted';
-            if(o.status === 'В пути') statusClass = 'badge-intransit';
-            if(o.status === 'Доставлена') statusClass = 'badge-delivered';
+            let badgeClass = 'badge-new';
+            if (o.status === 'Принята') badgeClass = 'badge-accepted';
+            if (o.status === 'В пути') badgeClass = 'badge-intransit';
+            if (o.status === 'Доставлена') badgeClass = 'badge-delivered';
 
             tbody.innerHTML += `
                 <tr>
-                    <td><strong>${o.name}</strong></td>
+                    <td><strong>${o.name}</strong><br><small>${o.ip}</small></td>
                     <td>${o.address}</td>
-                    <td>${o.phone}</td>
-                    <td>${o.total} ₸</td>
-                    <td><span class="badge ${statusClass}">${o.status}</span></td>
+                    <td><a href="tel:${o.phone}">${o.phone}</a></td>
+                    <td><strong>${o.total.toLocaleString()} ₸</strong></td>
+                    <td><span class="badge ${badgeClass}">${o.status}</span></td>
                     <td>
-                        <select class="status-updater" data-id="${id}" style="padding:4px; border-radius:4px;">
+                        <select class="status-select" data-id="${id}" style="padding:6px; border-radius:6px; border:1px solid var(--border);">
                             <option value="Новая" ${o.status === 'Новая' ? 'selected' : ''}>Новая</option>
                             <option value="Принята" ${o.status === 'Принята' ? 'selected' : ''}>Принята</option>
                             <option value="В пути" ${o.status === 'В пути' ? 'selected' : ''}>В пути</option>
@@ -259,58 +327,116 @@ export const Pages = {
             `;
         });
 
-        // Навешиваем обработчики изменения статуса заказа
-        document.querySelectorAll('.status-updater').forEach(select => {
+        document.querySelectorAll('.status-select').forEach(select => {
             select.addEventListener('change', async (e) => {
                 const orderId = e.target.getAttribute('data-id');
-                const newStatus = e.target.value;
-                await updateDoc(doc(db, "orders", orderId), { status: newStatus });
-                alert('Статус заявки обновлен!');
-                Pages.initDriverPage(); // Перерендер
+                const updatedStatus = e.target.value;
+                
+                await updateDoc(doc(db, "orders", orderId), { status: updatedStatus });
+                alert('Статус успешно изменен на "' + updatedStatus + '"!');
+                Pages.initDriverPage(); // Мгновенный перерендер таблицы
             });
         });
     },
 
-    // 6. Отчеты аналитики
+    // --- ОТЧЁТЫ И АНАЛИТИКА ДЛЯ РУКОВОДСТВА ---
     async reports() {
         return `
             <div class="card">
-                <h2>Аналитические отчеты компании</h2>
-                <div class="stats-grid" style="margin-top:20px;">
-                    <div class="stat-card" style="border-left: 4px solid var(--primary);">
-                        <div class="stat-info"><p>Продажи текущий месяц</p><h3>1,420,000 ₸</h3></div>
-                    </div>
-                    <div class="stat-card" style="border-left: 4px solid var(--color-delivered);">
-                        <div class="stat-info"><p>Выполнено заявок</p><h3>184 шт</h3></div>
-                    </div>
-                </div>
-                <div style="margin-top:20px;">
-                    <h3>Топ клиентов (Шымкент)</h3>
-                    <table style="margin-top:10px;">
-                        <thead><tr><th>Клиент</th><th>Кол-во заказов</th><th>Сумма (₸)</th></tr></thead>
-                        <tbody>
-                            <tr><td><strong>ТД Рахмет</strong></td><td>32</td><td>480,000 ₸</td></tr>
-                            <tr><td><strong>Минимаркет Алия</strong></td><td>28</td><td>310,000 ₸</td></tr>
-                        </tbody>
+                <h2>Генератор аналитических отчётов</h2>
+                <div class="table-responsive" style="margin-top:20px;">
+                    <h3>Сводные показатели продаж по Торговым Представителям</h3>
+                    <table style="margin-top:10px; margin-bottom:30px;">
+                        <thead>
+                            <tr>
+                                <th>Торговый представитель (Email)</th>
+                                <th>Количество оформленных заявок</th>
+                                <th>Общий оборот компании (₸)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reports-agents-body"></tbody>
+                    </table>
+
+                    <h3>Рейтинг лучших клиентов (по объёму выручки)</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Название торговой точки</th>
+                                <th>Адрес</th>
+                                <th>Сумма выкупленного товара</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reports-clients-body"></tbody>
                     </table>
                 </div>
             </div>
         `;
     },
 
-    // 7. Управление сотрудниками (Для Администратора)
+    async initReportsPage() {
+        const agentsTbody = document.getElementById('reports-agents-body');
+        const clientsTbody = document.getElementById('reports-clients-body');
+        const snap = await getDocs(collection(db, "orders"));
+
+        const agentMap = {};
+        const clientMap = {};
+
+        snap.forEach(docSnap => {
+            const o = docSnap.data();
+            
+            // Расчет по торговым
+            const agent = o.agentEmail || 'Не указан';
+            if (!agentMap[agent]) agentMap[agent] = { count: 0, total: 0 };
+            agentMap[agent].count++;
+            agentMap[agent].total += Number(o.total || 0);
+
+            // Расчет по точкам
+            const client = o.name;
+            if (!clientMap[client]) clientMap[client] = { address: o.address, total: 0 };
+            clientMap[client].total += Number(o.total || 0);
+        });
+
+        // Отрисовка торговых
+        agentsTbody.innerHTML = '';
+        for (const key in agentMap) {
+            agentsTbody.innerHTML += `
+                <tr>
+                    <td><strong>${key}</strong></td>
+                    <td>${agentMap[key].count} шт</td>
+                    <td>${agentMap[key].total.toLocaleString()} ₸</td>
+                </tr>
+            `;
+        }
+
+        // Отрисовка лучших клиентов
+        const sortedClients = Object.entries(clientMap).sort((a,b) => b[1].total - a[1].total);
+        clientsTbody.innerHTML = '';
+        sortedClients.forEach(([name, data]) => {
+            clientsTbody.innerHTML += `
+                <tr>
+                    <td><strong>${name}</strong></td>
+                    <td>${data.address}</td>
+                    <td><span style="color:#059669; font-weight:600;">${data.total.toLocaleString()} ₸</span></td>
+                </tr>
+            `;
+        });
+    },
+
+    // --- УПРАВЛЕНИЕ СОТРУДНИКАМИ И ДОСТУПОМ (ДЛЯ АДМИНИСТРАТОРА) ---
     async employees() {
         return `
             <div class="card">
-                <h2>Управление персоналом CRM</h2>
-                <div class="table-responsive" style="margin-top:20px;">
+                <h2>Сотрудники и доступы к CRM</h2>
+                <p style="color:var(--text-muted); margin-bottom: 20px;">Изменяйте внутренние роли или удаляйте учетные записи уволенных сотрудников.</p>
+                <div class="table-responsive">
                     <table>
                         <thead>
                             <tr>
-                                <th>Имя сотрудника</th>
-                                <th>Email</th>
+                                <th>ФИО Сотрудника</th>
+                                <th>Email в системе</th>
                                 <th>Текущая роль</th>
-                                <th>Действия</th>
+                                <th>Изменить роль</th>
+                                <th>Удалить из CRM</th>
                             </tr>
                         </thead>
                         <tbody id="employees-table-body"></tbody>
@@ -324,33 +450,51 @@ export const Pages = {
         const tbody = document.getElementById('employees-table-body');
         const snap = await getDocs(collection(db, "users"));
         tbody.innerHTML = '';
-        
+
         snap.forEach(docSnap => {
             const uid = docSnap.id;
             const u = docSnap.data();
+
             tbody.innerHTML += `
                 <tr>
-                    <td><strong>${u.name || 'Сотрудник'}</strong></td>
+                    <td><strong>${u.name || 'Не заполнено'}</strong></td>
                     <td>${u.email}</td>
-                    <td><span class="badge badge-new">${u.role}</span></td>
+                    <td><span class="badge badge-intransit">${u.role}</span></td>
                     <td>
-                        <select class="role-changer" data-uid="${uid}" style="padding:4px; border-radius:4px;">
-                            <option value="Администратор" ${u.role === 'Администратор' ? 'selected' : ''}>Администратор</option>
-                            <option value="Руководитель" ${u.role === 'Руководитель' ? 'selected' : ''}>Руководитель</option>
+                        <select class="role-changer-select" data-uid="${uid}" style="padding:6px; border-radius:6px;">
                             <option value="Торговый представитель" ${u.role === 'Торговый представитель' ? 'selected' : ''}>Торговый представитель</option>
                             <option value="Водитель" ${u.role === 'Водитель' ? 'selected' : ''}>Водитель</option>
+                            <option value="Руководитель" ${u.role === 'Руководитель' ? 'selected' : ''}>Руководитель</option>
+                            <option value="Администратор" ${u.role === 'Администратор' ? 'selected' : ''}>Администратор</option>
                         </select>
+                    </td>
+                    <td>
+                        <button class="btn-delete-user" data-uid="${uid}" style="background:#ef4444; color:white; padding:6px 12px; border-radius:6px; border:none; cursor:pointer;"><i class="fa-solid fa-trash-can"></i></button>
                     </td>
                 </tr>
             `;
         });
 
-        document.querySelectorAll('.role-changer').forEach(select => {
+        // Изменение роли сотрудника
+        document.querySelectorAll('.role-changer-select').forEach(select => {
             select.addEventListener('change', async (e) => {
-                const userUid = e.target.getAttribute('data-uid');
-                const newRole = e.target.value;
-                await updateDoc(doc(db, "users", userUid), { role: newRole });
-                alert('Роль сотрудника успешно обновлена в Firestore!');
+                const uid = e.target.getAttribute('data-uid');
+                const nextRole = e.target.value;
+                await updateDoc(doc(db, "users", uid), { role: nextRole });
+                alert('Права доступа изменены в реальном времени!');
+                Pages.initEmployeesPage();
+            });
+        });
+
+        // Удаление сотрудника из БД
+        document.querySelectorAll('.btn-delete-user').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                if (confirm('Вы уверены, что хотите заблокировать и удалить этого сотрудника?')) {
+                    const uid = btn.closest('button').getAttribute('data-uid');
+                    await deleteDoc(doc(db, "users", uid));
+                    alert('Сотрудник успешно удален.');
+                    Pages.initEmployeesPage();
+                }
             });
         });
     }
