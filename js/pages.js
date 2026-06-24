@@ -268,6 +268,7 @@ export const Pages = {
         let userCoords = null;
         let routingControl = null;
         let activeOrderId = null; // ID заказа, к которому едем
+        itineraryClassName: 'hidden'
 
         const driverIcon = L.icon({
             iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
