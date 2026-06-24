@@ -90,7 +90,6 @@ export const Pages = {
         let hasContent = false;
         snap.forEach(docSnap => {
             const c = docSnap.data();
-            // АКБ — точки со статусом "Активен", ОКБ — абсолютно все (включая потенциальные)
             if (type === 'akb' && c.status !== 'Активен') return;
             hasContent = true;
 
@@ -118,7 +117,7 @@ export const Pages = {
                 <form id="order-form" style="margin-top:20px;">
                     <div class="form-group">
                         <label>Название магазина</label>
-                        <input type="text" id="ord-name" required placeholder="Магазин 'Арман'">
+                        <input type="text" id="ord-name" required placeholder="Магазин 'Arman'">
                     </div>
                     <div class="form-group">
                         <label>ИП владельца</label>
@@ -141,6 +140,14 @@ export const Pages = {
                         <input type="number" id="ord-total" required placeholder="25000">
                     </div>
                     <div class="form-group">
+                        <label>Широта (Lat) для бесплатной карты</label>
+                        <input type="text" id="ord-lat" required placeholder="Например: 42.3174">
+                    </div>
+                    <div class="form-group">
+                        <label>Долгота (Lng) для бесплатной карты</label>
+                        <input type="text" id="ord-lng" required placeholder="Например: 69.5901">
+                    </div>
+                    <div class="form-group">
                         <label>Комментарий для логиста/водителя</label>
                         <textarea id="ord-comment" rows="2" placeholder="Доставка строго до 09:00 утра"></textarea>
                     </div>
@@ -160,109 +167,134 @@ export const Pages = {
             const phone = document.getElementById('ord-phone').value;
             const items = document.getElementById('ord-items').value;
             const total = Number(document.getElementById('ord-total').value);
+            const lat = Number(document.getElementById('ord-lat').value);
+            const lng = Number(document.getElementById('ord-lng').value);
             const comment = document.getElementById('ord-comment').value;
 
-            // 1. Сохраняем заявку в общую ленту заказов
             await addDoc(collection(db, "orders"), {
-                name, ip, address, phone, items, total, comment,
+                name, ip, address, phone, items, total, lat, lng, comment,
                 status: 'Новая',
                 agentEmail: auth.currentUser ? auth.currentUser.email : 'Система',
                 createdAt: new Date().toISOString()
             });
 
-            // 2. Дублируем клиента в общую базу клиентов (ОКБ), если его там еще нет
             await addDoc(collection(db, "clients"), {
                 name, ip, address, phone,
                 status: 'Активен'
             });
 
-            alert('Заявка успешно отправлена на склад и добавлена в базу клиентов!');
+            alert('Заявка успешно создана!');
             document.getElementById('order-form').reset();
         });
     },
 
-    // --- РАБОЧАЯ ГЕОКАРТА (GOOGLE MAPS) ---
+    // --- БЕСПЛАТНАЯ ГЕОКАРТА (LEAFLET + OPENSTREETMAP) ---
     async map() {
         return `
             <div class="card">
                 <h2>Живая карта логистики Шымкента</h2>
-                <p style="color:var(--text-muted); margin-bottom:15px;">Автоматическая генерация маркеров заявок и трассировка путей доставки.</p>
-                <div id="google-map" class="map-container" style="height: 550px;"></div>
+                <p style="color:var(--text-muted); margin-bottom:15px;">Бесплатная интерактивная карта Leaflet. Маркеры активных точек доставки.</p>
+                <div id="leaflet-map" style="height: 550px; width: 100%; border-radius: 8px; z-index: 1;"></div>
             </div>
         `;
     },
 
     async initMapPage() {
-        const shymkentCenter = { lat: 42.3174, lng: 69.5901 }; // Координаты центра Шымкента
+        const mapContainer = document.getElementById('leaflet-map');
+        if (!mapContainer) return;
+
+        const map = L.map('leaflet-map').setView([42.3174, 69.5901], 12);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        const snap = await getDocs(collection(db, "orders"));
         
-        if (typeof google === 'undefined' || !google.maps) {
-            document.getElementById('google-map').innerHTML = `<p style="padding:20px; color:red;">Ошибка загрузки Google Maps API. Проверьте ваш API Ключ в index.html.</p>`;
+        snap.forEach(docSnap => {
+            const order = docSnap.data();
+            
+            if (order.lat && order.lng) {
+                const popupContent = `
+                    <div style="font-family: sans-serif; line-height: 1.4;">
+                        <strong style="color:#6366f1; font-size:1.1rem;">${order.name}</strong><br>
+                        <b>Адрес:</b> ${order.address}<br>
+                        <b>Сумма:</b> <span style="color:#4ade80; font-weight:bold;">${order.total.toLocaleString()} ₸</span><br>
+                        <b>Статус:</b> ${order.status}
+                    </div>
+                `;
+
+                L.marker([order.lat, order.lng])
+                    .addTo(map)
+                    .bindPopup(popupContent);
+            }
+        });
+    },
+
+    // --- ЖУРНАЛ ВСЕХ ЗАЯВОК ДЛЯ БУХГАЛТЕРА, РУКОВОДИТЕЛЯ И АДМИНА ---
+    async allOrders() {
+        return `
+            <div class="card">
+                <h2>Финансовый журнал заявок</h2>
+                <p style="color:var(--text-muted); margin-bottom: 20px;">Контроль входящих заказов, сумм и кассовых поступлений.</p>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Дата</th>
+                                <th>Магазин / Торговая точка</th>
+                                <th>Товары</th>
+                                <th>Торговый представитель</th>
+                                <th>Сумма</th>
+                                <th>Статус</th>
+                            </tr>
+                        </thead>
+                        <tbody id="all-orders-table-body">
+                            <tr><td colspan="6">Загрузка данных...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    },
+
+    async initAllOrdersPage() {
+        const tbody = document.getElementById('all-orders-table-body');
+        if (!tbody) return;
+
+        const snap = await getDocs(collection(db, "orders"));
+        tbody.innerHTML = '';
+
+        if (snap.empty) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">Заявки отсутствуют.</td></tr>`;
             return;
         }
 
-        const map = new google.maps.Map(document.getElementById("google-map"), {
-            zoom: 12,
-            center: shymkentCenter
+        const sortedDocs = snap.docs.sort((a, b) => new Date(b.data().createdAt) - new Date(a.data().createdAt));
+
+        sortedDocs.forEach(docSnap => {
+            const o = docSnap.data();
+            const date = o.createdAt ? new Date(o.createdAt).toLocaleDateString('ru-RU') : '—';
+            
+            let badgeClass = 'badge-new';
+            if (o.status === 'Принята') badgeClass = 'badge-accepted';
+            if (o.status === 'В пути') badgeClass = 'badge-intransit';
+            if (o.status === 'Доставлена') badgeClass = 'badge-delivered';
+
+            tbody.innerHTML += `
+                <tr>
+                    <td>${date}</td>
+                    <td><strong>${o.name}</strong><br><small>${o.ip || 'ИП'}</small></td>
+                    <td><span style="font-size:0.9rem; color:var(--text-muted);">${o.items}</span></td>
+                    <td>${o.agentEmail || '—'}</td>
+                    <td><strong style="color:var(--primary);">${o.total.toLocaleString()} ₸</strong></td>
+                    <td><span class="badge ${badgeClass}">${o.status}</span></td>
+                </tr>
+            `;
         });
-
-        const geocoder = new google.maps.Geocoder();
-        const directionsService = new google.maps.DirectionsService();
-        const directionsRenderer = new google.maps.DirectionsRenderer({ map: map, suppressMarkers: true });
-
-        const snap = await getDocs(collection(db, "orders"));
-        const waypoints = [];
-
-        for (const docSnap of snap.docs) {
-            const order = docSnap.data();
-            const fullAddress = order.address.includes("Шымкент") ? order.address : `Казахстан, Шымкент, ${order.address}`;
-
-            // Геокодируем адрес на лету
-            await new Promise((resolve) => {
-                geocoder.geocode({ address: fullAddress }, (results, status) => {
-                    if (status === 'OK' && results[0]) {
-                        const position = results[0].geometry.location;
-                        waypoints.push({ location: position, stopover: true });
-
-                        // Ставим маркер магазина
-                        const marker = new google.maps.Marker({
-                            position: position,
-                            map: map,
-                            title: order.name,
-                            icon: 'https://maps.google.com/mapfiles/ms/icons/purple-dot.png'
-                        });
-
-                        const infoWindow = new google.maps.InfoWindow({
-                            content: `<strong>${order.name}</strong><br>${order.address}<br>Сумма: ${order.total} ₸<br>Статус: <b>${order.status}</b>`
-                        });
-
-                        marker.addListener('click', () => infoWindow.open(map, marker));
-                    }
-                    setTimeout(resolve, 200); // Защита от лимитов запросов (Query Limit)
-                });
-            });
-        }
-
-        // Если есть хотя бы 2 заявки — строим оптимальный маршрут доставки для водителя по дорогам
-        if (waypoints.length >= 2) {
-            const origin = waypoints[0].location;
-            const destination = waypoints[waypoints.length - 1].location;
-            const midPoints = waypoints.slice(1, waypoints.length - 1);
-
-            directionsService.route({
-                origin: origin,
-                destination: destination,
-                waypoints: midPoints,
-                optimizeWaypoints: true,
-                travelMode: google.maps.TravelMode.DRIVING
-            }, (response, status) => {
-                if (status === 'OK') {
-                    directionsRenderer.setDirections(response);
-                }
-            });
-        }
     },
 
-    // --- МОДУЛЬ ДЛЯ ВОДИТЕЛЕЙ (УПРАВЛЕНИЕ СТАТУСАМИ ДОСТАВКИ) ---
+    // --- МОДУЛЬ ДЛЯ ВОДИТЕЛЕЙ ---
     async driver() {
         return `
             <div class="card">
@@ -331,15 +363,14 @@ export const Pages = {
             select.addEventListener('change', async (e) => {
                 const orderId = e.target.getAttribute('data-id');
                 const updatedStatus = e.target.value;
-                
                 await updateDoc(doc(db, "orders", orderId), { status: updatedStatus });
-                alert('Статус успешно изменен на "' + updatedStatus + '"!');
-                Pages.initDriverPage(); // Мгновенный перерендер таблицы
+                alert('Статус изменен!');
+                Pages.initDriverPage();
             });
         });
     },
 
-    // --- ОТЧЁТЫ И АНАЛИТИКА ДЛЯ РУКОВОДСТВА ---
+    // --- ОТЧЁТЫ И АНАЛИТИКА ---
     async reports() {
         return `
             <div class="card">
@@ -383,20 +414,16 @@ export const Pages = {
 
         snap.forEach(docSnap => {
             const o = docSnap.data();
-            
-            // Расчет по торговым
             const agent = o.agentEmail || 'Не указан';
             if (!agentMap[agent]) agentMap[agent] = { count: 0, total: 0 };
             agentMap[agent].count++;
             agentMap[agent].total += Number(o.total || 0);
 
-            // Расчет по точкам
             const client = o.name;
             if (!clientMap[client]) clientMap[client] = { address: o.address, total: 0 };
             clientMap[client].total += Number(o.total || 0);
         });
 
-        // Отрисовка торговых
         agentsTbody.innerHTML = '';
         for (const key in agentMap) {
             agentsTbody.innerHTML += `
@@ -408,7 +435,6 @@ export const Pages = {
             `;
         }
 
-        // Отрисовка лучших клиентов
         const sortedClients = Object.entries(clientMap).sort((a,b) => b[1].total - a[1].total);
         clientsTbody.innerHTML = '';
         sortedClients.forEach(([name, data]) => {
@@ -422,7 +448,7 @@ export const Pages = {
         });
     },
 
-    // --- УПРАВЛЕНИЕ СОТРУДНИКАМИ И ДОСТУПОМ (ДЛЯ АДМИНИСТРАТОРА) ---
+    // --- УПРАВЛЕНИЕ СОТРУДНИКАМИ ---
     async employees() {
         return `
             <div class="card">
@@ -464,6 +490,7 @@ export const Pages = {
                         <select class="role-changer-select" data-uid="${uid}" style="padding:6px; border-radius:6px;">
                             <option value="Торговый представитель" ${u.role === 'Торговый представитель' ? 'selected' : ''}>Торговый представитель</option>
                             <option value="Водитель" ${u.role === 'Водитель' ? 'selected' : ''}>Водитель</option>
+                            <option value="Бухгалтер" ${u.role === 'Бухгалтер' ? 'selected' : ''}>Бухгалтер</option>
                             <option value="Руководитель" ${u.role === 'Руководитель' ? 'selected' : ''}>Руководитель</option>
                             <option value="Администратор" ${u.role === 'Администратор' ? 'selected' : ''}>Администратор</option>
                         </select>
@@ -475,24 +502,22 @@ export const Pages = {
             `;
         });
 
-        // Изменение роли сотрудника
         document.querySelectorAll('.role-changer-select').forEach(select => {
             select.addEventListener('change', async (e) => {
                 const uid = e.target.getAttribute('data-uid');
                 const nextRole = e.target.value;
                 await updateDoc(doc(db, "users", uid), { role: nextRole });
-                alert('Права доступа изменены в реальном времени!');
+                alert('Права доступа изменены!');
                 Pages.initEmployeesPage();
             });
         });
 
-        // Удаление сотрудника из БД
         document.querySelectorAll('.btn-delete-user').forEach(btn => {
             btn.addEventListener('click', async (e) => {
-                if (confirm('Вы уверены, что хотите заблокировать и удалить этого сотрудника?')) {
+                if (confirm('Удалить сотрудника?')) {
                     const uid = btn.closest('button').getAttribute('data-uid');
                     await deleteDoc(doc(db, "users", uid));
-                    alert('Сотрудник успешно удален.');
+                    alert('Сотрудник удален.');
                     Pages.initEmployeesPage();
                 }
             });
