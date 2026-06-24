@@ -6,52 +6,42 @@ const appLoader = document.getElementById('app-loader');
 const appContainer = document.getElementById('app');
 const authScreen = document.getElementById('auth-screen');
 const authForm = document.getElementById('auth-form');
-const mainContent = document.getElementById('main-content');
+const registerForm = document.getElementById('register-form');
 
-// Точка входа приложения
+const loginBlock = document.getElementById('login-block');
+const registerBlock = document.getElementById('register-block');
+
 document.addEventListener('DOMContentLoaded', () => {
     AuthModule.init(handleAuthStateChange);
     setupEventListeners();
 });
 
-// Реагирование на изменение статуса сессии
 function handleAuthStateChange(user, role) {
     appLoader.classList.add('hidden');
     
     if (user) {
-        // Пользователь авторизован
         authScreen.classList.add('hidden');
         appContainer.classList.remove('hidden');
         
-        // Обновляем метаданные юзера в шапке
         document.getElementById('user-display-name').innerText = user.email;
         document.getElementById('user-role-badge').innerText = role;
-        document.getElementById('user-role-badge').className = `badge badge-new`;
 
-        // Отрендерить меню под роль
         Components.renderSidebar(role);
-        
-        // Навесить клики на новые элементы сайдбара
         setupSidebarLinks();
-        
-        // Открываем страницу по умолчанию
         navigateTo('dashboard');
     } else {
-        // Сессии нет — открываем окно логина
         appContainer.classList.add('hidden');
         authScreen.classList.remove('hidden');
     }
 }
 
-// Настройка основных глобальных переключателей
 function setupEventListeners() {
-    // Обработка отправки формы логина
+    // Вход в систему
     authForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const email = document.getElementById('auth-email').value;
         const password = document.getElementById('auth-password').value;
         const errDiv = document.getElementById('auth-error');
-        
         try {
             errDiv.classList.add('hidden');
             await AuthModule.login(email, password);
@@ -61,12 +51,42 @@ function setupEventListeners() {
         }
     });
 
-    // Выход из системы
+    // Регистрация нового сотрудника
+    registerForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = document.getElementById('reg-name').value;
+        const email = document.getElementById('reg-email').value;
+        const role = document.getElementById('reg-role').value;
+        const password = document.getElementById('reg-password').value;
+        const errDiv = document.getElementById('reg-error');
+
+        try {
+            errDiv.classList.add('hidden');
+            await AuthModule.register(email, password, name, role);
+            alert('Сотрудник успешно создан! Вход выполнен.');
+        } catch (error) {
+            errDiv.innerText = error.message;
+            errDiv.classList.remove('hidden');
+        }
+    });
+
+    // Переключатели экранов Вход / Регистрация
+    document.getElementById('to-register').addEventListener('click', (e) => {
+        e.preventDefault();
+        loginBlock.classList.add('hidden');
+        registerBlock.classList.remove('hidden');
+    });
+
+    document.getElementById('to-login').addEventListener('click', (e) => {
+        e.preventDefault();
+        registerBlock.classList.add('hidden');
+        loginBlock.classList.remove('hidden');
+    });
+
     document.getElementById('btn-logout').addEventListener('click', () => {
         AuthModule.logout();
     });
 
-    // Мобильный триггер сайдбара
     document.getElementById('toggle-menu').addEventListener('click', () => {
         document.getElementById('sidebar').classList.toggle('mobile-open');
     });
@@ -74,23 +94,18 @@ function setupEventListeners() {
 
 function setupSidebarLinks() {
     document.querySelectorAll('.sidebar-item').forEach(item => {
-        item.addEventListener('click', (e) => {
+        item.addEventListener('click', () => {
             const pageId = item.getAttribute('data-page');
-            
-            // Убираем класс активности у всех и добавляем текущему
             document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
             item.classList.add('active');
-            
-            // Закрываем мобильное меню при переходе
             document.getElementById('sidebar').classList.remove('mobile-open');
-            
             navigateTo(pageId);
         });
     });
 }
 
-// Клиентский SPA Роутер
 async function navigateTo(pageId) {
+    const mainContent = document.getElementById('main-content');
     mainContent.innerHTML = '<div class="spinner" style="margin: 40px auto;"></div>';
     
     switch (pageId) {
@@ -120,12 +135,11 @@ async function navigateTo(pageId) {
             break;
         case 'reports':
             mainContent.innerHTML = await Pages.reports();
+            await Pages.initReportsPage();
             break;
         case 'employees':
             mainContent.innerHTML = await Pages.employees();
             await Pages.initEmployeesPage();
             break;
-        default:
-            mainContent.innerHTML = `<h2>Страница в разработке</h2>`;
     }
 }
