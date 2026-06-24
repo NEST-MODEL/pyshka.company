@@ -1,6 +1,8 @@
 import { AuthModule } from './auth.js';
 import { Components } from './components.js';
 import { Pages } from './pages.js';
+import { db, auth } from './firebase-config.js';
+import { collection, addDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 const appLoader = document.getElementById('app-loader');
 const appContainer = document.getElementById('app');
