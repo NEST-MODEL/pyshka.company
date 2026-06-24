@@ -31,38 +31,29 @@ export const Pages = {
     },
 
     async initDashboard() {
-        try {
-            const ordersSnap = await getDocs(collection(db, "orders"));
-            const usersSnap = await getDocs(collection(db, "users"));
+        const ordersSnap = await getDocs(collection(db, "orders"));
+        const usersSnap = await getDocs(collection(db, "users"));
 
-            let dailyOrdersCount = 0;
-            let dailySalesVolume = 0;
-            ordersSnap.forEach(d => {
-                const data = d.data();
-                dailyOrdersCount++;
-                dailySalesVolume += Number(data.total || 0);
-            });
+        let dailyOrdersCount = 0;
+        let dailySalesVolume = 0;
+        ordersSnap.forEach(d => {
+            const data = d.data();
+            dailyOrdersCount++;
+            dailySalesVolume += Number(data.total || 0);
+        });
 
-            let agentsCount = 0;
-            let driversCount = 0;
-            usersSnap.forEach(d => {
-                const u = d.data();
-                if (u.role === 'Торговый представитель') agentsCount++;
-                if (u.role === 'Водитель') driversCount++;
-            });
+        let agentsCount = 0;
+        let driversCount = 0;
+        usersSnap.forEach(d => {
+            const u = d.data();
+            if (u.role === 'Торговый представитель') agentsCount++;
+            if (u.role === 'Водитель') driversCount++;
+        });
 
-            const elOrders = document.getElementById('dash-orders');
-            const elSales = document.getElementById('dash-sales');
-            const elAgents = document.getElementById('dash-agents');
-            const elDrivers = document.getElementById('dash-drivers');
-
-            if (elOrders) elOrders.innerText = dailyOrdersCount;
-            if (elSales) elSales.innerText = dailySalesVolume.toLocaleString() + ' ₸';
-            if (elAgents) elAgents.innerText = agentsCount;
-            if (elDrivers) elDrivers.innerText = driversCount;
-        } catch (e) {
-            console.error("Ошибка дашборда:", e);
-        }
+        document.getElementById('dash-orders').innerText = dailyOrdersCount;
+        document.getElementById('dash-sales').innerText = dailySalesVolume.toLocaleString() + ' ₸';
+        document.getElementById('dash-agents').innerText = agentsCount;
+        document.getElementById('dash-drivers').innerText = driversCount;
     },
 
     // --- УЧЁТ КЛИЕНТСКИХ БАЗ (АКБ / ОКБ) ---
@@ -93,37 +84,32 @@ export const Pages = {
 
     async initClients(type) {
         const tbody = document.getElementById('clients-table-body');
-        if (!tbody) return;
-        try {
-            const snap = await getDocs(collection(db, "clients"));
-            tbody.innerHTML = '';
+        const snap = await getDocs(collection(db, "clients"));
+        tbody.innerHTML = '';
 
-            let hasContent = false;
-            snap.forEach(docSnap => {
-                const c = docSnap.data();
-                if (type === 'akb' && c.status !== 'Активен') return;
-                hasContent = true;
+        let hasContent = false;
+        snap.forEach(docSnap => {
+            const c = docSnap.data();
+            if (type === 'akb' && c.status !== 'Активен') return;
+            hasContent = true;
 
-                tbody.innerHTML += `
-                    <tr>
-                        <td><strong>${c.name}</strong></td>
-                        <td>${c.ip || '—'}</td>
-                        <td>${c.address || '—'}</td>
-                        <td>${c.phone || '—'}</td>
-                        <td><span class="badge ${c.status === 'Активен' ? 'badge-delivered' : 'badge-accepted'}">${c.status}</span></td>
-                    </tr>
-                `;
-            });
+            tbody.innerHTML += `
+                <tr>
+                    <td><strong>${c.name}</strong></td>
+                    <td>${c.ip}</td>
+                    <td>${c.address}</td>
+                    <td>${c.phone}</td>
+                    <td><span class="badge ${c.status === 'Активен' ? 'badge-delivered' : 'badge-accepted'}">${c.status}</span></td>
+                </tr>
+            `;
+        });
 
-            if (!hasContent) {
-                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">База данных пуста.</td></tr>`;
-            }
-        } catch (e) {
-            tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:red;">Ошибка загрузки базы клиентов.</td></tr>`;
+        if (!hasContent) {
+            tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">База данных пуста.</td></tr>`;
         }
     },
 
-    // --- СОЗДАНИЕ ЗАЯВОК ТОРГОВЫМ ПРЕДСТАВИТЕЛЕМ (КЛИК ПО КАРТЕ) ---
+    // --- СОЗДАНИЕ ЗАЯВОК ТОРГОВЫМ ПРЕДСТАВИТЕЛЕМ ---
     async createOrder() {
         return `
             <div class="card" style="max-width: 650px; margin: 0 auto;">
@@ -146,22 +132,21 @@ export const Pages = {
                         <input type="text" id="ord-phone" required placeholder="+7 (701) 555-4433">
                     </div>
                     <div class="form-group">
-                        <label>Список хлебобулочных изделий</label>
+                        <label>Список хлебобулочных изделий (Наименование, количество)</label>
                         <textarea id="ord-items" rows="3" required placeholder="Пышки — 100 шт, Булки — 50 шт"></textarea>
                     </div>
                     <div class="form-group">
                         <label>Общая сумма заказа (₸)</label>
                         <input type="number" id="ord-total" required placeholder="25000">
                     </div>
-                    
                     <div class="form-group">
-                        <label style="color: var(--primary); font-weight: bold;">Укажите расположение магазина на карте (Просто кликните):</label>
-                        <div id="picker-map" style="height: 250px; width: 100%; border-radius: 8px; margin-top: 5px; border: 1px solid var(--border); z-index: 1;"></div>
+                        <label>Широта (Lat) для бесплатной карты</label>
+                        <input type="text" id="ord-lat" required placeholder="Например: 42.3174">
                     </div>
-
-                    <input type="hidden" id="ord-lat" value="42.3174">
-                    <input type="hidden" id="ord-lng" value="69.5901">
-
+                    <div class="form-group">
+                        <label>Долгота (Lng) для бесплатной карты</label>
+                        <input type="text" id="ord-lng" required placeholder="Например: 69.5901">
+                    </div>
                     <div class="form-group">
                         <label>Комментарий для логиста/водителя</label>
                         <textarea id="ord-comment" rows="2" placeholder="Доставка строго до 09:00 утра"></textarea>
@@ -173,28 +158,7 @@ export const Pages = {
     },
 
     async initCreateOrder() {
-        const pickerContainer = document.getElementById('picker-map');
-        if (!pickerContainer) return;
-
-        const pickerMap = L.map('picker-map').setView([42.3174, 69.5901], 12);
-
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OSM'
-        }).addTo(pickerMap);
-
-        let currentMarker = L.marker([42.3174, 69.5901]).addTo(pickerMap);
-
-        pickerMap.on('click', (e) => {
-            const { lat, lng } = e.latlng;
-            currentMarker.setLatLng([lat, lng]);
-            document.getElementById('ord-lat').value = lat;
-            document.getElementById('ord-lng').value = lng;
-        });
-
-        const form = document.getElementById('order-form');
-        if (!form) return;
-
-        form.addEventListener('submit', async (e) => {
+        document.getElementById('order-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const name = document.getElementById('ord-name').value;
@@ -207,27 +171,20 @@ export const Pages = {
             const lng = Number(document.getElementById('ord-lng').value);
             const comment = document.getElementById('ord-comment').value;
 
-            try {
-                await addDoc(collection(db, "orders"), {
-                    name, ip, address, phone, items, total, lat, lng, comment,
-                    status: 'Новая',
-                    agentEmail: auth.currentUser ? auth.currentUser.email : 'Система',
-                    createdAt: new Date().toISOString()
-                });
+            await addDoc(collection(db, "orders"), {
+                name, ip, address, phone, items, total, lat, lng, comment,
+                status: 'Новая',
+                agentEmail: auth.currentUser ? auth.currentUser.email : 'Система',
+                createdAt: new Date().toISOString()
+            });
 
-                await addDoc(collection(db, "clients"), {
-                    name, ip, address, phone,
-                    status: 'Активен'
-                });
+            await addDoc(collection(db, "clients"), {
+                name, ip, address, phone,
+                status: 'Активен'
+            });
 
-                alert('Заявка успешно создана!');
-                form.reset();
-                
-                currentMarker.setLatLng([42.3174, 69.5901]);
-                pickerMap.setView([42.3174, 69.5901], 12);
-            } catch (err) {
-                alert('Ошибка сохранения: ' + err.message);
-            }
+            alert('Заявка успешно создана!');
+            document.getElementById('order-form').reset();
         });
     },
 
@@ -252,25 +209,26 @@ export const Pages = {
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
 
-        try {
-            const snap = await getDocs(collection(db, "orders"));
-            snap.forEach(docSnap => {
-                const order = docSnap.data();
-                if (order.lat && order.lng) {
-                    const popupContent = `
-                        <div style="font-family: sans-serif; line-height: 1.4;">
-                            <strong style="color:#6366f1; font-size:1.1rem;">${order.name}</strong><br>
-                            <b>Адрес:</b> ${order.address}<br>
-                            <b>Сумма:</b> <span style="color:#4ade80; font-weight:bold;">${Number(order.total || 0).toLocaleString()} ₸</span><br>
-                            <b>Статус:</b> ${order.status}
-                        </div>
-                    `;
-                    L.marker([order.lat, order.lng]).addTo(map).bindPopup(popupContent);
-                }
-            });
-        } catch (e) {
-            console.error("Ошибка карты:", e);
-        }
+        const snap = await getDocs(collection(db, "orders"));
+        
+        snap.forEach(docSnap => {
+            const order = docSnap.data();
+            
+            if (order.lat && order.lng) {
+                const popupContent = `
+                    <div style="font-family: sans-serif; line-height: 1.4;">
+                        <strong style="color:#6366f1; font-size:1.1rem;">${order.name}</strong><br>
+                        <b>Адрес:</b> ${order.address}<br>
+                        <b>Сумма:</b> <span style="color:#4ade80; font-weight:bold;">${order.total.toLocaleString()} ₸</span><br>
+                        <b>Статус:</b> ${order.status}
+                    </div>
+                `;
+
+                L.marker([order.lat, order.lng])
+                    .addTo(map)
+                    .bindPopup(popupContent);
+            }
+        });
     },
 
     // --- ЖУРНАЛ ВСЕХ ЗАЯВОК ДЛЯ БУХГАЛТЕРА, РУКОВОДИТЕЛЯ И АДМИНА ---
@@ -304,52 +262,36 @@ export const Pages = {
         const tbody = document.getElementById('all-orders-table-body');
         if (!tbody) return;
 
-        try {
-            tbody.innerHTML = '<tr><td colspan="6">Загрузка данных из базы...</td></tr>';
-            
-            const snap = await getDocs(collection(db, "orders"));
-            tbody.innerHTML = '';
+        const snap = await getDocs(collection(db, "orders"));
+        tbody.innerHTML = '';
 
-            if (!snap || snap.empty) {
-                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">Заявки отсутствуют.</td></tr>`;
-                return;
-            }
-
-            const sortedDocs = snap.docs.sort((a, b) => {
-                const dateA = a.data().createdAt ? new Date(a.data().createdAt) : 0;
-                const dateB = b.data().createdAt ? new Date(b.data().createdAt) : 0;
-                return dateB - dateA;
-            });
-
-            sortedDocs.forEach(docSnap => {
-                const o = docSnap.data();
-                const date = o.createdAt ? new Date(o.createdAt).toLocaleDateString('ru-RU') : '—';
-                const totalSum = o.total ? Number(o.total).toLocaleString() : '0';
-                
-                let badgeClass = 'badge-new';
-                if (o.status === 'Принята') badgeClass = 'badge-accepted';
-                if (o.status === 'В пути') badgeClass = 'badge-intransit';
-                if (o.status === 'Доставлена') badgeClass = 'badge-delivered';
-
-                tbody.innerHTML += `
-                    <tr>
-                        <td>${date}</td>
-                        <td><strong>${o.name || 'Без названия'}</strong><br><small>${o.ip || 'ИП'}</small></td>
-                        <td><span style="font-size:0.9rem; color:var(--text-muted);">${o.items || '—'}</span></td>
-                        <td>${o.agentEmail || '—'}</td>
-                        <td><strong style="color:var(--primary);">${totalSum} ₸</strong></td>
-                        <td><span class="badge ${badgeClass}">${o.status || 'Новая'}</span></td>
-                    </tr>
-                `;
-            });
-        } catch (error) {
-            console.error("Критическая ошибка в журнале заявок:", error);
-            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#ef4444; font-weight:600; padding: 20px;">
-                Ошибка доступа к данным.<br>
-                <small style="color: gray; font-weight: normal;">Код ошибки: ${error.code || error.message}</small><br>
-                <span style="font-size: 0.85rem; color: var(--text-muted);">Убедитесь, что у роли Бухгалтер есть доступ в правилах Firestore.</span>
-            </td></tr>`;
+        if (snap.empty) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">Заявки отсутствуют.</td></tr>`;
+            return;
         }
+
+        const sortedDocs = snap.docs.sort((a, b) => new Date(b.data().createdAt) - new Date(a.data().createdAt));
+
+        sortedDocs.forEach(docSnap => {
+            const o = docSnap.data();
+            const date = o.createdAt ? new Date(o.createdAt).toLocaleDateString('ru-RU') : '—';
+            
+            let badgeClass = 'badge-new';
+            if (o.status === 'Принята') badgeClass = 'badge-accepted';
+            if (o.status === 'В пути') badgeClass = 'badge-intransit';
+            if (o.status === 'Доставлена') badgeClass = 'badge-delivered';
+
+            tbody.innerHTML += `
+                <tr>
+                    <td>${date}</td>
+                    <td><strong>${o.name}</strong><br><small>${o.ip || 'ИП'}</small></td>
+                    <td><span style="font-size:0.9rem; color:var(--text-muted);">${o.items}</span></td>
+                    <td>${o.agentEmail || '—'}</td>
+                    <td><strong style="color:var(--primary);">${o.total.toLocaleString()} ₸</strong></td>
+                    <td><span class="badge ${badgeClass}">${o.status}</span></td>
+                </tr>
+            `;
+        });
     },
 
     // --- МОДУЛЬ ДЛЯ ВОДИТЕЛЕЙ ---
@@ -381,60 +323,51 @@ export const Pages = {
 
     async initDriverPage() {
         const tbody = document.getElementById('driver-table-body');
-        if (!tbody) return;
-        try {
-            const snap = await getDocs(collection(db, "orders"));
-            tbody.innerHTML = '';
+        const snap = await getDocs(collection(db, "orders"));
+        tbody.innerHTML = '';
 
-            if (snap.empty) {
-                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">Назначенных заявок на сегодня нет.</td></tr>`;
-                return;
-            }
-
-            snap.forEach(docSnap => {
-                const id = docSnap.id;
-                const o = docSnap.data();
-                
-                let badgeClass = 'badge-new';
-                if (o.status === 'Принята') badgeClass = 'badge-accepted';
-                if (o.status === 'В пути') badgeClass = 'badge-intransit';
-                if (o.status === 'Доставлена') badgeClass = 'badge-delivered';
-
-                tbody.innerHTML += `
-                    <tr>
-                        <td><strong>${o.name}</strong><br><small>${o.ip || 'ИП'}</small></td>
-                        <td>${o.address || '—'}</td>
-                        <td><a href="tel:${o.phone}">${o.phone || '—'}</a></td>
-                        <td><strong>${o.total ? Number(o.total).toLocaleString() : 0} ₸</strong></td>
-                        <td><span class="badge ${badgeClass}">${o.status}</span></td>
-                        <td>
-                            <select class="status-select" data-id="${id}" style="padding:6px; border-radius:6px; border:1px solid var(--border);">
-                                <option value="Новая" ${o.status === 'Новая' ? 'selected' : ''}>Новая</option>
-                                <option value="Принята" ${o.status === 'Принята' ? 'selected' : ''}>Принята</option>
-                                <option value="В пути" ${o.status === 'В пути' ? 'selected' : ''}>В пути</option>
-                                <option value="Доставлена" ${o.status === 'Доставлена' ? 'selected' : ''}>Доставлена</option>
-                            </select>
-                        </td>
-                    </tr>
-                `;
-            });
-
-            document.querySelectorAll('.status-select').forEach(select => {
-                select.addEventListener('change', async (e) => {
-                    const orderId = e.target.getAttribute('data-id');
-                    const updatedStatus = e.target.value;
-                    try {
-                        await updateDoc(doc(db, "orders", orderId), { status: updatedStatus });
-                        alert('Статус изменен!');
-                        Pages.initDriverPage();
-                    } catch (err) {
-                        alert("Не удалось обновить статус: " + err.message);
-                    }
-                });
-            });
-        } catch (e) {
-            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:red;">Ошибка загрузки путевых листов.</td></tr>`;
+        if (snap.empty) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">Назначенных заявок на сегодня нет.</td></tr>`;
+            return;
         }
+
+        snap.forEach(docSnap => {
+            const id = docSnap.id;
+            const o = docSnap.data();
+            
+            let badgeClass = 'badge-new';
+            if (o.status === 'Принята') badgeClass = 'badge-accepted';
+            if (o.status === 'В пути') badgeClass = 'badge-intransit';
+            if (o.status === 'Доставлена') badgeClass = 'badge-delivered';
+
+            tbody.innerHTML += `
+                <tr>
+                    <td><strong>${o.name}</strong><br><small>${o.ip}</small></td>
+                    <td>${o.address}</td>
+                    <td><a href="tel:${o.phone}">${o.phone}</a></td>
+                    <td><strong>${o.total.toLocaleString()} ₸</strong></td>
+                    <td><span class="badge ${badgeClass}">${o.status}</span></td>
+                    <td>
+                        <select class="status-select" data-id="${id}" style="padding:6px; border-radius:6px; border:1px solid var(--border);">
+                            <option value="Новая" ${o.status === 'Новая' ? 'selected' : ''}>Новая</option>
+                            <option value="Принята" ${o.status === 'Принята' ? 'selected' : ''}>Принята</option>
+                            <option value="В пути" ${o.status === 'В пути' ? 'selected' : ''}>В пути</option>
+                            <option value="Доставлена" ${o.status === 'Доставлена' ? 'selected' : ''}>Доставлена</option>
+                        </select>
+                    </td>
+                </tr>
+            `;
+        });
+
+        document.querySelectorAll('.status-select').forEach(select => {
+            select.addEventListener('change', async (e) => {
+                const orderId = e.target.getAttribute('data-id');
+                const updatedStatus = e.target.value;
+                await updateDoc(doc(db, "orders", orderId), { status: updatedStatus });
+                alert('Статус изменен!');
+                Pages.initDriverPage();
+            });
+        });
     },
 
     // --- ОТЧЁТЫ И АНАЛИТИКА ---
@@ -474,50 +407,45 @@ export const Pages = {
     async initReportsPage() {
         const agentsTbody = document.getElementById('reports-agents-body');
         const clientsTbody = document.getElementById('reports-clients-body');
-        if (!agentsTbody || !clientsTbody) return;
+        const snap = await getDocs(collection(db, "orders"));
 
-        try {
-            const snap = await getDocs(collection(db, "orders"));
-            const agentMap = {};
-            const clientMap = {};
+        const agentMap = {};
+        const clientMap = {};
 
-            snap.forEach(docSnap => {
-                const o = docSnap.data();
-                const agent = o.agentEmail || 'Не указан';
-                if (!agentMap[agent]) agentMap[agent] = { count: 0, total: 0 };
-                agentMap[agent].count++;
-                agentMap[agent].total += Number(o.total || 0);
+        snap.forEach(docSnap => {
+            const o = docSnap.data();
+            const agent = o.agentEmail || 'Не указан';
+            if (!agentMap[agent]) agentMap[agent] = { count: 0, total: 0 };
+            agentMap[agent].count++;
+            agentMap[agent].total += Number(o.total || 0);
 
-                const client = o.name || 'Неизвестный магазин';
-                if (!clientMap[client]) clientMap[client] = { address: o.address || '—', total: 0 };
-                clientMap[client].total += Number(o.total || 0);
-            });
+            const client = o.name;
+            if (!clientMap[client]) clientMap[client] = { address: o.address, total: 0 };
+            clientMap[client].total += Number(o.total || 0);
+        });
 
-            agentsTbody.innerHTML = '';
-            for (const key in agentMap) {
-                agentsTbody.innerHTML += `
-                    <tr>
-                        <td><strong>${key}</strong></td>
-                        <td>${agentMap[key].count} шт</td>
-                        <td>${agentMap[key].total.toLocaleString()} ₸</td>
-                    </tr>
-                `;
-            }
-
-            const sortedClients = Object.entries(clientMap).sort((a,b) => b[1].total - a[1].total);
-            clientsTbody.innerHTML = '';
-            sortedClients.forEach(([name, data]) => {
-                clientsTbody.innerHTML += `
-                    <tr>
-                        <td><strong>${name}</strong></td>
-                        <td>${data.address}</td>
-                        <td><span style="color:#059669; font-weight:600;">${data.total.toLocaleString()} ₸</span></td>
-                    </tr>
-                `;
-            });
-        } catch (e) {
-            console.error("Ошибка отчетов:", e);
+        agentsTbody.innerHTML = '';
+        for (const key in agentMap) {
+            agentsTbody.innerHTML += `
+                <tr>
+                    <td><strong>${key}</strong></td>
+                    <td>${agentMap[key].count} шт</td>
+                    <td>${agentMap[key].total.toLocaleString()} ₸</td>
+                </tr>
+            `;
         }
+
+        const sortedClients = Object.entries(clientMap).sort((a,b) => b[1].total - a[1].total);
+        clientsTbody.innerHTML = '';
+        sortedClients.forEach(([name, data]) => {
+            clientsTbody.innerHTML += `
+                <tr>
+                    <td><strong>${name}</strong></td>
+                    <td>${data.address}</td>
+                    <td><span style="color:#059669; font-weight:600;">${data.total.toLocaleString()} ₸</span></td>
+                </tr>
+            `;
+        });
     },
 
     // --- УПРАВЛЕНИЕ СОТРУДНИКАМИ ---
@@ -546,66 +474,53 @@ export const Pages = {
 
     async initEmployeesPage() {
         const tbody = document.getElementById('employees-table-body');
-        if (!tbody) return;
-        try {
-            const snap = await getDocs(collection(db, "users"));
-            tbody.innerHTML = '';
+        const snap = await getDocs(collection(db, "users"));
+        tbody.innerHTML = '';
 
-            snap.forEach(docSnap => {
-                const uid = docSnap.id;
-                const u = docSnap.data();
+        snap.forEach(docSnap => {
+            const uid = docSnap.id;
+            const u = docSnap.data();
 
-                tbody.innerHTML += `
-                    <tr>
-                        <td><strong>${u.name || 'Не заполнено'}</strong></td>
-                        <td>${u.email}</td>
-                        <td><span class="badge badge-intransit">${u.role}</span></td>
-                        <td>
-                            <select class="role-changer-select" data-uid="${uid}" style="padding:6px; border-radius:6px;">
-                                <option value="Торговый представитель" ${u.role === 'Торговый представитель' ? 'selected' : ''}>Торговый представитель</option>
-                                <option value="Водитель" ${u.role === 'Водитель' ? 'selected' : ''}>Водитель</option>
-                                <option value="Бухгалтер" ${u.role === 'Бухгалтер' ? 'selected' : ''}>Бухгалтер</option>
-                                <option value="Руководитель" ${u.role === 'Руководитель' ? 'selected' : ''}>Руководитель</option>
-                                <option value="Администратор" ${u.role === 'Администратор' ? 'selected' : ''}>Администратор</option>
-                            </select>
-                        </td>
-                        <td>
-                            <button class="btn-delete-user" data-uid="${uid}" style="background:#ef4444; color:white; padding:6px 12px; border-radius:6px; border:none; cursor:pointer;"><i class="fa-solid fa-trash-can"></i></button>
-                        </td>
-                    </tr>
-                `;
+            tbody.innerHTML += `
+                <tr>
+                    <td><strong>${u.name || 'Не заполнено'}</strong></td>
+                    <td>${u.email}</td>
+                    <td><span class="badge badge-intransit">${u.role}</span></td>
+                    <td>
+                        <select class="role-changer-select" data-uid="${uid}" style="padding:6px; border-radius:6px;">
+                            <option value="Торговый представитель" ${u.role === 'Торговый представитель' ? 'selected' : ''}>Торговый представитель</option>
+                            <option value="Водитель" ${u.role === 'Водитель' ? 'selected' : ''}>Водитель</option>
+                            <option value="Бухгалтер" ${u.role === 'Бухгалтер' ? 'selected' : ''}>Бухгалтер</option>
+                            <option value="Руководитель" ${u.role === 'Руководитель' ? 'selected' : ''}>Руководитель</option>
+                            <option value="Администратор" ${u.role === 'Администратор' ? 'selected' : ''}>Администратор</option>
+                        </select>
+                    </td>
+                    <td>
+                        <button class="btn-delete-user" data-uid="${uid}" style="background:#ef4444; color:white; padding:6px 12px; border-radius:6px; border:none; cursor:pointer;"><i class="fa-solid fa-trash-can"></i></button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        document.querySelectorAll('.role-changer-select').forEach(select => {
+            select.addEventListener('change', async (e) => {
+                const uid = e.target.getAttribute('data-uid');
+                const nextRole = e.target.value;
+                await updateDoc(doc(db, "users", uid), { role: nextRole });
+                alert('Права доступа изменены!');
+                Pages.initEmployeesPage();
             });
+        });
 
-            document.querySelectorAll('.role-changer-select').forEach(select => {
-                select.addEventListener('change', async (e) => {
-                    const uid = e.target.getAttribute('data-uid');
-                    const nextRole = e.target.value;
-                    try {
-                        await updateDoc(doc(db, "users", uid), { role: nextRole });
-                        alert('Права доступа изменены!');
-                        Pages.initEmployeesPage();
-                    } catch (err) {
-                        alert("Ошибка смены роли: " + err.message);
-                    }
-                });
+        document.querySelectorAll('.btn-delete-user').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                if (confirm('Удалить сотрудника?')) {
+                    const uid = btn.closest('button').getAttribute('data-uid');
+                    await deleteDoc(doc(db, "users", uid));
+                    alert('Сотрудник удален.');
+                    Pages.initEmployeesPage();
+                }
             });
-
-            document.querySelectorAll('.btn-delete-user').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    if (confirm('Удалить сотрудника?')) {
-                        const uid = btn.closest('button').getAttribute('data-uid');
-                        try {
-                            await deleteDoc(doc(db, "users", uid));
-                            alert('Сотрудник удален.');
-                            Pages.initEmployeesPage();
-                        } catch (err) {
-                            alert("Ошибка удаления: " + err.message);
-                        }
-                    }
-                });
-            });
-        } catch (e) {
-            tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:red;">Ошибка загрузки списка сотрудников.</td></tr>`;
-        }
+        });
     }
 };
