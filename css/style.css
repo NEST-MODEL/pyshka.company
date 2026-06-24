@@ -227,3 +227,76 @@ th { background: #f1f5f9; font-weight: 600; color: var(--text-muted); }
 @media (min-width: 769px) {
     .toggle-menu { display: none; }
 }
+
+/* ─── ДОБАВИТЬ В КОНЕЦ style.css ─────────────────────────────────────────── */
+
+/* Карта Leaflet */
+.map-container {
+    width: 100%;
+    height: 520px;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+/* Секции формы дневного отчёта */
+.report-section {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin-bottom: 18px;
+}
+
+.report-section-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--primary);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Двухколоночные ряды в форме */
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+@media (max-width: 600px) {
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Мини-статистика в карточках истории отчётов */
+.mini-stat {
+    background: var(--surface-hover, rgba(255,255,255,0.05));
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    text-align: center;
+}
+
+.mini-stat-val {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1;
+}
+
+.mini-stat-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+/* Статус-бейджи (если не определены) */
+.badge-new       { background: rgba(245,158,11,0.15); color: #f59e0b; }
+.badge-accepted  { background: rgba(59,130,246,0.15); color: #3b82f6; }
+.badge-intransit { background: rgba(139,92,246,0.15); color: #8b5cf6; }
+.badge-delivered { background: rgba(34,197,94,0.15);  color: #22c55e; }
