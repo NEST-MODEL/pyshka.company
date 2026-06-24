@@ -232,6 +232,7 @@ export const Pages = {
     },
 
     // --- КАРТА ЛОГИСТИКИ С АВТО-СТАТУСАМИ ДЛЯ ВОДИТЕЛЯ ---
+    // --- КАРТА ЛОГИСТИКИ С АВТО-СТАТУСАМИ ДЛЯ ВОДИТЕЛЯ ---
     async map() {
         return `
             <div class="card">
@@ -240,14 +241,16 @@ export const Pages = {
                     <i class="fa-solid fa-location-arrow" style="color:var(--primary);"></i> 
                     Выберите магазин на карте и нажмите «Поехать сюда», чтобы открыть маршрут.
                 </p>
+                
                 <div id="driver-actions-panel" class="hidden" style="margin-bottom: 15px; padding: 15px; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
                     <span style="color: #0369a1; font-weight: 600;">
                         <i class="fa-solid fa-truck-moving fa-bounce"></i> Вы находитесь на маршруте
                     </span>
-                    <button id="btn-complete-delivery" class="btn" style="background: #059669; color: white; padding: 8px 16px; border-radius: 6px; font-weight: bold;">
+                    <button id="btn-complete-delivery" style="background: #059669; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer;">
                         <i class="fa-solid fa-square-check"></i> Завершить доставку
                     </button>
                 </div>
+
                 <div id="leaflet-map" style="height: 550px; width: 100%; border-radius: 8px; z-index: 1;"></div>
             </div>
         `;
@@ -257,16 +260,14 @@ export const Pages = {
         const mapContainer = document.getElementById('leaflet-map');
         if (!mapContainer) return;
 
-        // Центр Шымкента по умолчанию
+        // Центр Шымкента
         const map = L.map('leaflet-map').setView([42.3174, 69.5901], 12);
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap'
-        }).addTo(map);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
         let userCoords = null;
         let routingControl = null;
-        let activeOrderId = null; // Тут храним ID заявки, к которой сейчас едем
+        let activeOrderId = null; // ID заказа, к которому едем
 
         const driverIcon = L.icon({
             iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
@@ -274,7 +275,7 @@ export const Pages = {
             iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
         });
 
-        // Получаем геопозицию водителя
+        // Запрашиваем геопозицию водителя
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(
                 (pos) => {
@@ -282,12 +283,11 @@ export const Pages = {
                     map.setView(userCoords, 14);
                     L.marker(userCoords, { icon: driverIcon }).addTo(map).bindPopup('<b>Вы здесь</b>').openPopup();
                 },
-                (err) => { console.warn("GPS недоступен"); alert("Включите GPS для работы навигатора!"); },
+                (err) => { console.warn("GPS отключен или недоступен."); },
                 { enableHighAccuracy: true }
             );
         }
 
-        // Загружаем точки из Firebase
         try {
             const snap = await getDocs(collection(db, "orders"));
             
@@ -295,19 +295,15 @@ export const Pages = {
                 const order = docSnap.data();
                 const id = docSnap.id;
                 
-                // Отображаем только те заказы, которые еще не доставлены
-                if (order.lat && order.lng && order.status !== 'Доставлена') {
+                // Выводим только не доставленные заказы
+                if (order.lat && order.lng && order.status !== 'Доставлено') {
                     
-                    let statusBadge = `<span class="badge badge-new">Новая</span>`;
-                    if (order.status === 'Принята') statusBadge = `<span class="badge badge-accepted">Принята</span>`;
-                    if (order.status === 'В пути') statusBadge = `<span class="badge badge-intransit">В пути</span>`;
-
                     const popupContent = `
                         <div style="font-family: sans-serif; line-height: 1.4; min-width: 190px;">
                             <strong style="color:#6366f1; font-size:1.1rem;">${order.name}</strong><br>
                             <b>Адрес:</b> ${order.address}<br>
                             <b>Сумма:</b> ${Number(order.total || 0).toLocaleString()} ₸<br>
-                            <b>Текущий статус:</b> ${statusBadge}<br><br>
+                            <b>Статус:</b> ${order.status}<br><br>
                             
                             <button class="btn-route-start" data-id="${id}" data-lat="${order.lat}" data-lng="${order.lng}" 
                                 style="background:#6366f1; color:white; border:none; padding:8px 10px; border-radius:4px; width:100%; cursor:pointer; font-weight:bold;">
@@ -320,28 +316,28 @@ export const Pages = {
                 }
             });
 
-            // Обработка клика внутри балуна карты
+            // Ловим клик по кнопке "Поехать сюда" внутри балуна
             map.on('popupopen', () => {
                 const btnStart = document.querySelector('.btn-route-start');
                 if (btnStart) {
-                    btnStart.onclick = async (e) => {
+                    btnStart.onclick = async () => {
                         const targetLat = parseFloat(btnStart.getAttribute('data-lat'));
                         const targetLng = parseFloat(btnStart.getAttribute('data-lng'));
                         const orderId = btnStart.getAttribute('data-id');
+
                         if (!userCoords) {
-                            alert("Ошибка: Не удалось определить ваше текущее GPSположение.");
+                            alert("Включите GPS на телефоне, чтобы построить маршрут от вас!");
                             return;
                         }
-                        // Сохраняем ID активной заявки
+
                         activeOrderId = orderId;
-                        // 1. АВТОМАТИЧЕСКИ МЕНЯЕМ СТАТУС В FIREBASE НА "В ПУТИ"
-                        try {
-                            await updateDoc(doc(db, "orders", activeOrderId), { status: 'В пути' });
-                        } catch (err) {
-                            console.error("Не удалось обновить статус:", err);
-                        }
-                        // 2. СТРОИМ МАРШРУТ НА КАРТЕ
+
+                        // 1. Меняем статус в Firebase на "В пути"
+                        await updateDoc(doc(db, "orders", activeOrderId), { status: 'В пути' });
+
+                        // 2. Строим линию маршрута на карте по дорогам
                         if (routingControl) map.removeControl(routingControl);
+                        
                         routingControl = L.Routing.control({
                             waypoints: [L.latLng(userCoords[0], userCoords[1]), L.latLng(targetLat, targetLng)],
                             lineOptions: { styles: [{ color: '#6366f1', weight: 6, opacity: 0.8 }] },
@@ -349,41 +345,41 @@ export const Pages = {
                             show: true,
                             language: 'ru'
                         }).addTo(map);
+
                         map.closePopup();
-                        // 3. ПОКАЗЫВАЕМ ПАНЕЛЬ "ЗАВЕРШИТЬ"
+
+                        // 3. Показываем верхнюю панель с кнопкой завершения
                         const panel = document.getElementById('driver-actions-panel');
                         if (panel) panel.classList.remove('hidden');
                     };
                 }
             });
-            // 4. ОБРАБОТКА КНОПКИ "ЗАВЕРШИТЬ ДОСТАВКУ"
+
+            // 4. Клик по кнопке "Завершить доставку"
             const btnComplete = document.getElementById('btn-complete-delivery');
             if (btnComplete) {
                 btnComplete.onclick = async () => {
                     if (!activeOrderId) return;
-                    if (confirm("Вы приехали на точку? Перевести статус заявки в «Доставлено»?")) {
-                        try {
-                            // Меняем статус на Доставлено
-                            await updateDoc(doc(db, "orders", activeOrderId), { status: 'Доставлено' });
-                            alert("Заказ успешно выполнен и закрыт!");
-                            // Очищаем карту от старого маршрута
-                            if (routingControl) {
-                                map.removeControl(routingControl);
-                            }
-                            // Прячем панель действий
-                            const panel = document.getElementById('driver-actions-panel');
-                            if (panel) panel.classList.add('hidden');
-                            activeOrderId = null;
-                            // Перезапускаем страницу карты, чтобы убрать маркер выполненного магазина
-                            Pages.initMapPage();
-                        } catch (err) {
-                            alert("Ошибка при закрытии заказа: " + err.message);
-                        }
+
+                    if (confirm("Доставили пышки? Перевести статус в «Доставлено»?")) {
+                        // Меняем статус в базе на Доставлено
+                        await updateDoc(doc(db, "orders", activeOrderId), { status: 'Доставлено' });
+                        alert("Заказ выполнен!");
+
+                        if (routingControl) map.removeControl(routingControl);
+                        const panel = document.getElementById('driver-actions-panel');
+                        if (panel) panel.classList.add('hidden');
+
+                        activeOrderId = null;
+                        
+                        // Перезапускаем карту, чтобы убрать выполненную точку
+                        this.initMapPage();
                     }
                 };
             }
+
         } catch (e) {
-            console.error("Ошибка инициализации логистики:", e);
+            console.error("Ошибка:", e);
         }
     },
 
