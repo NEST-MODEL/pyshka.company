@@ -141,5 +141,10 @@ async function navigateTo(pageId) {
             mainContent.innerHTML = await Pages.employees();
             await Pages.initEmployeesPage();
             break;
+            // Добавь этот кейс внутрь switch (pageId) в файле js/app.js
+        case 'all-orders':
+            mainContent.innerHTML = await Pages.allOrders();
+            await Pages.initAllOrdersPage();
+            break;
     }
 }
