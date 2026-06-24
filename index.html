@@ -4,8 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Пышка CRM — Система логистики и учета</title>
+    <!-- Иконки FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Главные стили Leaflet -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Стили плагина Навигатора (Маршрутов) -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
     
     <style>
@@ -73,13 +76,14 @@
             #toggle-menu { display: block; }
         }
 
-        /* Кастомные фиксы для панели шагов навигатора Leaflet */
         .leaflet-routing-container { max-height: 300px; overflow-y: auto; background: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); font-size: 0.85rem; }
     </style>
 </head>
 <body>
 
+    <!-- ЭКРАН АВТОРИЗАЦИИ -->
     <div id="auth-screen" class="auth-container">
+        <!-- Блок Входа -->
         <div id="login-block" class="auth-card">
             <h2>Войти в Пышка CRM</h2>
             <div id="auth-error" class="error-msg hidden"></div>
@@ -99,6 +103,7 @@
             </div>
         </div>
 
+        <!-- Блок Регистрации -->
         <div id="register-block" class="auth-card hidden">
             <h2>Регистрация сотрудника</h2>
             <div id="reg-error" class="error-msg hidden"></div>
@@ -133,6 +138,7 @@
         </div>
     </div>
 
+    <!-- ГЛАВНЫЙ ИНТЕРФЕЙС CRM -->
     <div id="app" class="hidden" style="display: flex; width: 100vw;">
         <nav id="sidebar"></nav>
 
@@ -155,9 +161,11 @@
         </div>
     </div>
 
+    <!-- СКРИПТЫ КАРТ (ГРУЗЯТСЯ СТРОГО ДО ОСНОВНОГО ПРИЛОЖЕНИЯ) -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
     
-    <script type="module" src="js/app.js"></script>
+    <!-- ТОЧКА ВХОДА CRM (ОБЯЗАТЕЛЬНО С TYPE="MODULE") -->
+    <script type="module" src="./js/app.js"></script>
 </body>
 </html>
