@@ -1,7 +1,6 @@
 export const Components = {
     renderSidebar(role) {
         const sidebar = document.getElementById('sidebar');
-        if (!sidebar) return;
         
         const menuItems = [
             { 
