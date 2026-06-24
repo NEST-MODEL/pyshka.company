@@ -1,5 +1,5 @@
-import { db, auth } from './firebase-config.js';
-import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
+import { db } from './firebase-config.js';
+import { collection, getDocs, doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 export const Pages = {
     // --- ГЛАВНАЯ ПАНЕЛЬ (ЖИВАЯ СТАТИСТИКА) ---
@@ -339,14 +339,23 @@ export const Pages = {
                         // 2. Строим линию маршрута на карте по дорогам
                         if (routingControl) map.removeControl(routingControl);
                         
+// Очищаем старые маршруты и линии перед созданием нового
+                        if (routingControl) map.removeControl(routingControl);
+                        if (backupLine) map.removeLayer(backupLine);
+
+                        // Строим маршрут без лишнего текста на экране телефона
                         routingControl = L.Routing.control({
                             waypoints: [L.latLng(userCoords[0], userCoords[1]), L.latLng(targetLat, targetLng)],
                             lineOptions: { styles: [{ color: '#6366f1', weight: 6, opacity: 0.8 }] },
-                            router: L.Routing.osrmv1({ serviceUrl: 'https://router.project-osrm.org/route/v1' }),
-                            show: true,
+                            router: L.Routing.osrmv1({ 
+                                serviceUrl: 'https://routing.openstreetmap.de/routed-car/route/v1',
+                                profile: 'driving'
+                            }),
+                            show: false,
+                            addWaypoints: false,
+                            itineraryClassName: 'hidden', // Маскируем прозрачный блок
                             language: 'ru'
                         }).addTo(map);
-
                         map.closePopup();
 
                         // 3. Показываем верхнюю панель с кнопкой завершения
@@ -357,24 +366,32 @@ export const Pages = {
             });
 
             // 4. Клик по кнопке "Завершить доставку"
+// Клик по кнопке "Завершить доставку"
             const btnComplete = document.getElementById('btn-complete-delivery');
             if (btnComplete) {
                 btnComplete.onclick = async () => {
                     if (!activeOrderId) return;
-
-                    if (confirm("Доставили пышки? Перевести статус в «Доставлено»?")) {
-                        // Меняем статус в базе на Доставлено
-                        await updateDoc(doc(db, "orders", activeOrderId), { status: 'Доставлено' });
-                        alert("Заказ выполнен!");
-
-                        if (routingControl) map.removeControl(routingControl);
-                        const panel = document.getElementById('driver-actions-panel');
-                        if (panel) panel.classList.add('hidden');
-
-                        activeOrderId = null;
+                    if (confirm("Доставка завершена? Перевести статус в «Доставлено»?")) {
+                        try {
+                            // Меняем статус в Firebase
+                            await updateDoc(doc(db, "orders", activeOrderId), { status: 'Доставлено' });
+                            alert("Заказ выполнен!");
+                            if (routingControl) map.removeControl(routingControl);
+                            if (backupLine) map.removeLayer(backupLine);
                         
-                        // Перезапускаем карту, чтобы убрать выполненную точку
-                        this.initMapPage();
+                            const panel = document.getElementById('driver-actions-panel');
+                            if (panel) panel.classList.add('hidden');
+
+                            activeOrderId = null;
+                            
+                            // Перерисовываем карту (метка исчезнет)
+                            map.off();
+                            map.remove();
+                            Pages.initMapPage();
+
+                        } catch (err) {
+                            console.error("Ошибка обновления статуса:", err);
+                        }
                     }
                 };
             }
