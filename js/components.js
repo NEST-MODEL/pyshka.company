@@ -1,7 +1,9 @@
 export const Components = {
+    // Генерация Сайдбара с динамическим распределением прав доступа
     renderSidebar(role) {
         const sidebar = document.getElementById('sidebar');
         
+        // Массив разделов системы с четким указанием допущенных ролей
         const menuItems = [
             { 
                 id: 'dashboard', 
@@ -28,7 +30,7 @@ export const Components = {
                 roles: ['Администратор', 'Руководитель', 'Торговый представитель'] 
             },
             { 
-                id: 'all-orders', 
+                id: 'all-orders', // Новый раздел просмотра всех заявок для Бухгалтера/Руководства
                 label: 'Журнал заявок (Финансы)', 
                 icon: 'fa-file-invoice-dollar', 
                 roles: ['Администратор', 'Руководитель', 'Бухгалтер'] 
@@ -55,7 +57,7 @@ export const Components = {
                 id: 'employees', 
                 label: 'Сотрудники', 
                 icon: 'fa-user-gear', 
-                roles: ['Администратор', 'Руководитель'] 
+                roles: ['Администратор', 'Руководитель'] // Руководитель теперь тоже может управлять ролями
             },
         ];
 
@@ -68,6 +70,7 @@ export const Components = {
         `;
 
         menuItems.forEach(item => {
+            // Если роль пользователя есть в списке разрешенных для этого пункта
             if (item.roles.includes(role)) {
                 menuHtml += `
                     <li class="sidebar-item" data-page="${item.id}">
