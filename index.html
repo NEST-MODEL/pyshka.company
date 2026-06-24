@@ -8,16 +8,19 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Leaflet CSS (бесплатная замена Google Maps) -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+
+    <!-- Экран загрузки -->
     <div id="app-loader" class="loader-container">
         <div class="spinner"></div>
     </div>
+
+    <!-- Основной интерфейс CRM -->
     <div id="app" class="app-container hidden">
         <aside id="sidebar" class="sidebar"></aside>
+
         <div class="main-wrapper">
             <header class="topbar">
                 <div class="toggle-menu" id="toggle-menu">
@@ -29,11 +32,15 @@
                     <button id="btn-logout" title="Выйти"><i class="fa-solid fa-right-from-bracket"></i></button>
                 </div>
             </header>
+
             <main id="main-content" class="content-container"></main>
         </div>
     </div>
+
+    <!-- Экран Авторизации и Регистрации -->
     <div id="auth-screen" class="auth-container hidden">
-        <div class="auth-card">
+        <!-- Блок Входа -->
+        <div class="auth-card" id="login-block">
             <div class="auth-logo">
                 <i class="fa-solid fa-bread-slice"></i>
                 <h2>Пышка CRM</h2>
@@ -41,20 +48,62 @@
             </div>
             <form id="auth-form">
                 <div class="form-group">
-                    <label for="auth-email">Email / Логин</label>
-                    <input type="email" id="auth-email" required placeholder="example@pyshka.kz">
+                    <label for="auth-email">Email сотрудника</label>
+                    <input type="email" id="auth-email" required placeholder="name@pyshka.kz">
                 </div>
                 <div class="form-group">
                     <label for="auth-password">Пароль</label>
                     <input type="password" id="auth-password" required placeholder="••••••••">
                 </div>
-                <div id="auth-error" class="auth-error hidden"></div>
+                <div id="auth-error" class="auth-error hidden" style="color:#ef4444; margin-bottom:10px; font-size:0.9rem;"></div>
                 <button type="submit" class="btn btn-primary btn-block">Войти в систему</button>
             </form>
+            <div class="auth-switch" style="text-align:center; margin-top:20px; font-size:0.9rem;">
+                Нет аккаунта? <a href="#" id="to-register" style="color:var(--primary); font-weight:600; text-decoration:none;">Зарегистрироваться</a>
+            </div>
+        </div>
+
+        <!-- Блок Регистрации -->
+        <div class="auth-card hidden" id="register-block">
+            <div class="auth-logo">
+                <i class="fa-solid fa-user-plus"></i>
+                <h2>Регистрация</h2>
+                <p>Создание учетной записи сотрудника</p>
+            </div>
+            <form id="register-form">
+                <div class="form-group">
+                    <label for="reg-name">ФИО Сотрудника</label>
+                    <input type="text" id="reg-name" required placeholder="Иван Иванов">
+                </div>
+                <div class="form-group">
+                    <label for="reg-email">Email</label>
+                    <input type="email" id="reg-email" required placeholder="name@pyshka.kz">
+                </div>
+                <div class="form-group">
+                    <label for="reg-role">Должность / Роль</label>
+                    <select id="reg-role" required>
+                        <option value="Торговый представитель">Торговый представитель</option>
+                        <option value="Водитель">Водитель</option>
+                        <option value="Руководитель">Руководитель</option>
+                        <option value="Администратор">Администратор</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="reg-password">Пароль (минимум 6 символов)</label>
+                    <input type="password" id="reg-password" required placeholder="••••••••">
+                </div>
+                <div id="reg-error" class="auth-error hidden" style="color:#ef4444; margin-bottom:10px; font-size:0.9rem;"></div>
+                <button type="submit" class="btn btn-primary btn-block">Создать аккаунт</button>
+            </form>
+            <div class="auth-switch" style="text-align:center; margin-top:20px; font-size:0.9rem;">
+                Уже есть аккаунт? <a href="#" id="to-login" style="color:var(--primary); font-weight:600; text-decoration:none;">Войти</a>
+            </div>
         </div>
     </div>
-    <!-- Leaflet JS (бесплатно, без ключей) -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Загрузка скриптов Google Maps (Библиотека геокодирования и маршрутов встроена) -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&libraries=places" defer></script>
+    
     <script type="importmap">
         {
             "imports": {
