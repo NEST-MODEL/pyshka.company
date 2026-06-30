@@ -51,6 +51,24 @@ export const Components = {
                 icon: 'fa-chart-bar', 
                 roles: ['Администратор', 'Руководитель', 'Бухгалтер'] 
             },
+            {
+                id: 'salary',
+                label: 'Зарплата',
+                icon: 'fa-money-bill-wave',
+                roles: ['Администратор', 'Руководитель', 'Бухгалтер']
+            },
+            {
+                id: 'my-earnings',
+                label: 'Моя зарплата',
+                icon: 'fa-wallet',
+                roles: ['Торговый представитель']
+            },
+            {
+                id: 'salary-history',
+                label: 'История начислений',
+                icon: 'fa-clock-rotate-left',
+                roles: ['Торговый представитель']
+            },
             { 
                 id: 'employees', 
                 label: 'Сотрудники', 
@@ -58,7 +76,6 @@ export const Components = {
                 roles: ['Администратор', 'Руководитель'] 
             },
         ];
-
         let menuHtml = `
             <div class="sidebar-brand">
                 <i class="fa-solid fa-bread-slice"></i>
@@ -66,7 +83,6 @@ export const Components = {
             </div>
             <ul class="sidebar-menu">
         `;
-
         menuItems.forEach(item => {
             if (item.roles.includes(role)) {
                 menuHtml += `
@@ -76,7 +92,6 @@ export const Components = {
                 `;
             }
         });
-
         menuHtml += `</ul>`;
         sidebar.innerHTML = menuHtml;
     }
