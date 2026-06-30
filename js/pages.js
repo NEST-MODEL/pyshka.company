@@ -1,6 +1,11 @@
 import { db, auth } from './firebase-config.js';
-import { collection, getDocs, doc, updateDoc, addDoc, query, where }
+import { collection, getDocs, doc, updateDoc, addDoc, query, where, deleteDoc }
   from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+// ─── Константы расчёта зарплаты (меняй здесь, если ставки изменятся) ───
+const SALARY_RATE_OKB = 100;   // ₸ за визит (ОКБ)
+const SALARY_RATE_AKB = 300;   // ₸ за заявку (АКБ)
+const SALARY_PERCENT  = 0.03;  // 3% с продаж
 
 export const Pages = {
 
@@ -118,15 +123,18 @@ export const Pages = {
                 <div id="step-select-shop" style="margin-top:20px;">
                     <label style="font-weight:600; font-size:1rem;">Выберите магазин из вашей базы:</label>
                     <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
-                        <select id="shop-selector" style="flex:1; padding:10px 14px; border-radius:8px; border:1.5px solid var(--border); font-size:0.97rem; background:var(--surface); color:var(--text);">
+                        <select id="shop-selector" style="flex:1; min-width:180px; padding:10px 14px; border-radius:8px; border:1.5px solid var(--border); font-size:0.97rem; background:var(--surface); color:var(--text);">
                             <option value="">⏳ Загрузка магазинов...</option>
                         </select>
                         <button id="btn-new-shop" style="padding:10px 18px; background:var(--primary); color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600; white-space:nowrap;">
                             <i class="fa-solid fa-plus"></i> Новый магазин
                         </button>
+                        <button type="button" id="btn-mark-visit" style="padding:10px 18px; background:#3b82f6; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600; white-space:nowrap;">
+                            <i class="fa-solid fa-shoe-prints"></i> Отметить визит
+                        </button>
                     </div>
                     <p style="font-size:0.85rem; color:var(--text-muted); margin-top:8px;">
-                        <i class="fa-solid fa-circle-info"></i> Выберите магазин — данные заполнятся автоматически
+                        <i class="fa-solid fa-circle-info"></i> Выберите магазин — данные заполнятся автоматически. «Отметить визит» — если зашли в магазин без заявки (засчитывается ОКБ +100₸).
                     </p>
                 </div>
 
@@ -302,6 +310,34 @@ export const Pages = {
             document.getElementById('ord-phone').value   = shop.phone   || '';
             if (shop.lat && shop.lng) setMarker(Number(shop.lat), Number(shop.lng));
             if (badge) badge.style.display = 'inline';
+        });
+
+        // --- ОТМЕТИТЬ ВИЗИТ (без создания заявки, только ОКБ) ---
+        document.getElementById('btn-mark-visit')?.addEventListener('click', async () => {
+            const shopName = document.getElementById('ord-name').value.trim();
+
+            if (!shopName) {
+                alert('Выберите магазин из списка или впишите его название в поле "Название магазина" перед отметкой визита.');
+                return;
+            }
+
+            if (!confirm(`Отметить визит в "${shopName}"? Засчитается как ОКБ (+${SALARY_RATE_OKB} ₸) без оформления заявки.`)) {
+                return;
+            }
+
+            const btn = document.getElementById('btn-mark-visit');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+
+            try {
+                await Pages.markVisit(shopName);
+                alert(`✅ Визит отмечен! +${SALARY_RATE_OKB} ₸ к зарплате за сегодня.`);
+            } catch (err) {
+                alert('Ошибка: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-shoe-prints"></i> Отметить визит';
+            }
         });
 
         // МОДАЛКА
@@ -1124,7 +1160,6 @@ export const Pages = {
                     if (confirm('Удалить сотрудника из CRM?')) {
                         const uid = btn.dataset.uid;
                         try {
-                            const { deleteDoc } = await import("https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js");
                             await deleteDoc(doc(db, "users", uid));
                             alert('Сотрудник удалён.');
                             Pages.initEmployeesPage();
@@ -1134,6 +1169,469 @@ export const Pages = {
             });
         } catch (e) {
             tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:red;">Ошибка загрузки.</td></tr>`;
+        }
+    },
+
+    // ═══════════════════════════════════════════════════
+    // ОТМЕТИТЬ ВИЗИТ (вызывается с кнопки в createOrder)
+    // ═══════════════════════════════════════════════════
+    async markVisit(shopName) {
+        const agentEmail = auth.currentUser ? auth.currentUser.email : null;
+        if (!agentEmail) { alert('Ошибка: пользователь не определён'); return false; }
+        try {
+            await addDoc(collection(db, "visits"), {
+                agentEmail,
+                shopName: shopName || 'Без названия',
+                createdAt: new Date().toISOString()
+            });
+            return true;
+        } catch (err) {
+            alert('Ошибка при отметке визита: ' + err.message);
+            return false;
+        }
+    },
+
+    // ═══════════════════════════════════════════════════
+    // РАЗДЕЛ "ЗАРПЛАТА" — список сотрудников (бухгалтер/руководитель)
+    // ═══════════════════════════════════════════════════
+    async salary() {
+        return `
+            <div class="card">
+                <h2><i class="fa-solid fa-money-bill-wave" style="color:var(--primary);"></i> Расчёт зарплаты</h2>
+                <p style="color:var(--text-muted); margin-bottom:20px;">Автоматический расчёт на основе посещений, заявок и продаж за текущий месяц.</p>
+                <div id="salary-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:16px;">
+                    <p style="color:var(--text-muted);">Загрузка сотрудников...</p>
+                </div>
+            </div>
+
+            <div id="modal-salary-card" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:9999; align-items:flex-start; justify-content:center; overflow-y:auto; padding:30px 16px;">
+                <div style="background:var(--surface); border-radius:16px; padding:0; width:100%; max-width:680px; box-shadow:0 20px 60px rgba(0,0,0,0.4); overflow:hidden;">
+                    <div id="salary-card-content" style="padding:28px;">Загрузка...</div>
+                </div>
+            </div>`;
+    },
+
+    async initSalaryPage() {
+        const grid = document.getElementById('salary-grid');
+        if (!grid) return;
+        try {
+            const [usersSnap, ordersSnap, visitsSnap] = await Promise.all([
+                getDocs(collection(db, "users")),
+                getDocs(collection(db, "orders")),
+                getDocs(collection(db, "visits"))
+            ]);
+
+            const now = new Date();
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const agents = [];
+            usersSnap.forEach(d => {
+                const u = d.data();
+                if (u.role === 'Торговый представитель') agents.push({ uid: d.id, ...u });
+            });
+
+            if (agents.length === 0) {
+                grid.innerHTML = '<p style="color:var(--text-muted);">Нет торговых представителей в системе.</p>';
+                return;
+            }
+
+            const stats = {};
+            agents.forEach(a => { stats[a.email] = { okbMonth: 0, akbMonth: 0, salesMonth: 0 }; });
+
+            ordersSnap.forEach(d => {
+                const o = d.data();
+                if (!o.agentEmail || !stats[o.agentEmail]) return;
+                if (!o.createdAt || new Date(o.createdAt) < monthStart) return;
+                stats[o.agentEmail].akbMonth++;
+                stats[o.agentEmail].salesMonth += Number(o.total || 0);
+            });
+
+            visitsSnap.forEach(d => {
+                const v = d.data();
+                if (!v.agentEmail || !stats[v.agentEmail]) return;
+                if (!v.createdAt || new Date(v.createdAt) < monthStart) return;
+                stats[v.agentEmail].okbMonth++;
+            });
+
+            grid.innerHTML = '';
+            agents.forEach(a => {
+                const s = stats[a.email] || { okbMonth: 0, akbMonth: 0, salesMonth: 0 };
+                const earnOkb = s.okbMonth * SALARY_RATE_OKB;
+                const earnAkb = s.akbMonth * SALARY_RATE_AKB;
+                const earnPercent = Math.round(s.salesMonth * SALARY_PERCENT);
+                const totalSalary = earnOkb + earnAkb + earnPercent;
+
+                grid.innerHTML += `
+                    <div class="salary-employee-card" data-email="${a.email}" data-name="${a.name||a.email}"
+                        style="background:var(--surface); border:1.5px solid var(--border); border-radius:14px; padding:20px; cursor:pointer; transition:0.2s;">
+                        <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+                            <div style="width:44px; height:44px; border-radius:50%; background:linear-gradient(135deg,#6366f1,#8b5cf6); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:1.1rem;">
+                                ${(a.name||a.email).charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                                <div style="font-weight:700; font-size:1rem;">${a.name || 'Без имени'}</div>
+                                <div style="font-size:0.8rem; color:var(--text-muted);">${a.role}</div>
+                            </div>
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; font-size:0.85rem;">
+                            <div style="background:#dbeafe; border-radius:8px; padding:8px 10px;">
+                                <div style="color:#2563eb; font-size:0.75rem;">ОКБ за месяц</div>
+                                <div style="font-weight:700; color:#2563eb;">${s.okbMonth}</div>
+                            </div>
+                            <div style="background:#fef3c7; border-radius:8px; padding:8px 10px;">
+                                <div style="color:#d97706; font-size:0.75rem;">АКБ за месяц</div>
+                                <div style="font-weight:700; color:#d97706;">${s.akbMonth}</div>
+                            </div>
+                        </div>
+                        <div style="border-top:1.5px solid var(--border); padding-top:12px; display:flex; justify-content:space-between; align-items:center;">
+                            <span style="font-size:0.85rem; color:var(--text-muted);">Зарплата (мес.)</span>
+                            <span style="font-size:1.25rem; font-weight:800; color:#059669;">${totalSalary.toLocaleString()} ₸</span>
+                        </div>
+                    </div>`;
+            });
+
+            document.querySelectorAll('.salary-employee-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    Pages.openSalaryCard(card.dataset.email, card.dataset.name);
+                });
+            });
+        } catch (e) {
+            console.error("Ошибка зарплаты:", e);
+            grid.innerHTML = `<p style="color:red;">Ошибка загрузки: ${e.message}</p>`;
+        }
+    },
+
+    // ═══════════════════════════════════════════════════
+    // ПОДРОБНАЯ КАРТОЧКА СОТРУДНИКА (модалка)
+    // ═══════════════════════════════════════════════════
+    async openSalaryCard(agentEmail, agentName) {
+        const modal = document.getElementById('modal-salary-card');
+        const content = document.getElementById('salary-card-content');
+        if (!modal || !content) return;
+        modal.style.display = 'flex';
+        content.innerHTML = '<div class="spinner" style="margin:40px auto;"></div>';
+
+        try {
+            const [ordersSnap, visitsSnap] = await Promise.all([
+                getDocs(query(collection(db, "orders"), where("agentEmail", "==", agentEmail))),
+                getDocs(query(collection(db, "visits"), where("agentEmail", "==", agentEmail)))
+            ]);
+
+            const now = new Date();
+            const todayStart = new Date(now); todayStart.setHours(0,0,0,0);
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+            let okbToday=0, akbToday=0, salesToday=0;
+            let okbMonth=0, akbMonth=0, salesMonth=0;
+            const shopsVisited = new Set();
+
+            ordersSnap.forEach(d => {
+                const o = d.data();
+                if (!o.createdAt) return;
+                const date = new Date(o.createdAt);
+                const total = Number(o.total||0);
+                if (date >= monthStart) { akbMonth++; salesMonth += total; }
+                if (date >= todayStart) { akbToday++; salesToday += total; }
+                if (o.name) shopsVisited.add(o.name);
+            });
+
+            visitsSnap.forEach(d => {
+                const v = d.data();
+                if (!v.createdAt) return;
+                const date = new Date(v.createdAt);
+                if (date >= monthStart) okbMonth++;
+                if (date >= todayStart) okbToday++;
+                if (v.shopName) shopsVisited.add(v.shopName);
+            });
+
+            const earnOkbToday = okbToday * SALARY_RATE_OKB;
+            const earnAkbToday = akbToday * SALARY_RATE_AKB;
+            const earnPercentToday = Math.round(salesToday * SALARY_PERCENT);
+            const totalToday = earnOkbToday + earnAkbToday + earnPercentToday;
+
+            const earnOkbMonth = okbMonth * SALARY_RATE_OKB;
+            const earnAkbMonth = akbMonth * SALARY_RATE_AKB;
+            const earnPercentMonth = Math.round(salesMonth * SALARY_PERCENT);
+            const totalMonth = earnOkbMonth + earnAkbMonth + earnPercentMonth;
+
+            const routeProgress = shopsVisited.size > 0 ? Math.min(100, Math.round((okbMonth / (okbMonth+5)) * 100)) : 0;
+
+            content.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px;">
+                    <div style="display:flex; align-items:center; gap:14px;">
+                        <div style="width:54px; height:54px; border-radius:50%; background:linear-gradient(135deg,#6366f1,#8b5cf6); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:1.4rem;">
+                            ${agentName.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                            <div style="font-weight:800; font-size:1.2rem;">${agentName}</div>
+                            <div style="font-size:0.85rem; color:var(--text-muted);">${agentEmail}</div>
+                        </div>
+                    </div>
+                    <button id="btn-close-salary-modal" style="background:none; border:none; font-size:1.3rem; cursor:pointer; color:var(--text-muted);">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+
+                <h3 style="font-size:0.95rem; color:var(--text-muted); margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px;">📅 Сегодня</h3>
+                <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:18px;">
+                    <div style="background:#dbeafe; border-radius:10px; padding:12px; text-align:center;">
+                        <div style="font-size:1.4rem; font-weight:800; color:#2563eb;">${okbToday}</div>
+                        <div style="font-size:0.75rem; color:#2563eb;">ОКБ (визиты)</div>
+                    </div>
+                    <div style="background:#fef3c7; border-radius:10px; padding:12px; text-align:center;">
+                        <div style="font-size:1.4rem; font-weight:800; color:#d97706;">${akbToday}</div>
+                        <div style="font-size:0.75rem; color:#d97706;">АКБ (заявки)</div>
+                    </div>
+                    <div style="background:#d1fae5; border-radius:10px; padding:12px; text-align:center;">
+                        <div style="font-size:1.2rem; font-weight:800; color:#059669;">${salesToday.toLocaleString()}₸</div>
+                        <div style="font-size:0.75rem; color:#059669;">Продажи</div>
+                    </div>
+                </div>
+
+                <div style="background:var(--bg, #f8fafc); border:1.5px solid var(--border); border-radius:12px; padding:16px; margin-bottom:24px;">
+                    <div style="font-weight:700; margin-bottom:10px; font-size:0.9rem;">💰 Заработано сегодня</div>
+                    <div style="display:flex; justify-content:space-between; font-size:0.88rem; padding:4px 0; color:var(--text-muted);">
+                        <span>За обходы (${okbToday} × ${SALARY_RATE_OKB}₸)</span><span>${earnOkbToday.toLocaleString()} ₸</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:0.88rem; padding:4px 0; color:var(--text-muted);">
+                        <span>За заявки (${akbToday} × ${SALARY_RATE_AKB}₸)</span><span>${earnAkbToday.toLocaleString()} ₸</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:0.88rem; padding:4px 0 10px; color:var(--text-muted); border-bottom:1px solid var(--border);">
+                        <span>Процент с продаж (${(SALARY_PERCENT*100)}%)</span><span>${earnPercentToday.toLocaleString()} ₸</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-weight:800; font-size:1.1rem; padding-top:10px; color:#059669;">
+                        <span>Итого за день</span><span>${totalToday.toLocaleString()} ₸</span>
+                    </div>
+                </div>
+
+                <h3 style="font-size:0.95rem; color:var(--text-muted); margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px;">📊 За месяц</h3>
+                <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:18px;">
+                    <div style="background:#dbeafe; border-radius:10px; padding:12px; text-align:center;">
+                        <div style="font-size:1.4rem; font-weight:800; color:#2563eb;">${okbMonth}</div>
+                        <div style="font-size:0.75rem; color:#2563eb;">ОКБ всего</div>
+                    </div>
+                    <div style="background:#fef3c7; border-radius:10px; padding:12px; text-align:center;">
+                        <div style="font-size:1.4rem; font-weight:800; color:#d97706;">${akbMonth}</div>
+                        <div style="font-size:0.75rem; color:#d97706;">АКБ всего</div>
+                    </div>
+                    <div style="background:#f3e8ff; border-radius:10px; padding:12px; text-align:center;">
+                        <div style="font-size:1.2rem; font-weight:800; color:#7c3aed;">${routeProgress}%</div>
+                        <div style="font-size:0.75rem; color:#7c3aed;">Маршрут</div>
+                    </div>
+                </div>
+
+                <div style="background:linear-gradient(135deg,#059669,#10b981); border-radius:14px; padding:20px; text-align:center; color:#fff; box-shadow:0 8px 20px rgba(5,150,105,0.3);">
+                    <div style="font-size:0.85rem; opacity:0.9; margin-bottom:4px;">Итоговая зарплата за месяц</div>
+                    <div style="font-size:2rem; font-weight:900;">${totalMonth.toLocaleString()} ₸</div>
+                    <div style="font-size:0.78rem; opacity:0.85; margin-top:6px;">
+                        ОКБ: ${earnOkbMonth.toLocaleString()}₸ • АКБ: ${earnAkbMonth.toLocaleString()}₸ • %: ${earnPercentMonth.toLocaleString()}₸
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('btn-close-salary-modal').onclick = () => { modal.style.display = 'none'; };
+            modal.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
+        } catch (e) {
+            content.innerHTML = `<p style="color:red;">Ошибка загрузки: ${e.message}</p>`;
+        }
+    },
+
+    // ═══════════════════════════════════════════════════
+    // ЛИЧНЫЙ КАБИНЕТ ТОРГОВОГО — своя зарплата
+    // ═══════════════════════════════════════════════════
+    async myEarnings() {
+        return `
+            <div class="card" style="max-width:680px; margin:0 auto;">
+                <h2><i class="fa-solid fa-wallet" style="color:var(--primary);"></i> Моя зарплата</h2>
+                <div id="my-earnings-content" style="margin-top:20px;">
+                    <div class="spinner" style="margin:40px auto;"></div>
+                </div>
+            </div>`;
+    },
+
+    async initMyEarningsPage() {
+        const container = document.getElementById('my-earnings-content');
+        if (!container) return;
+        const agentEmail = auth.currentUser ? auth.currentUser.email : null;
+        if (!agentEmail) { container.innerHTML = '<p>Ошибка: не определён пользователь</p>'; return; }
+
+        try {
+            const [ordersSnap, visitsSnap] = await Promise.all([
+                getDocs(query(collection(db, "orders"), where("agentEmail", "==", agentEmail))),
+                getDocs(query(collection(db, "visits"), where("agentEmail", "==", agentEmail)))
+            ]);
+
+            const now = new Date();
+            const todayStart = new Date(now); todayStart.setHours(0,0,0,0);
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+            let okbToday=0, akbToday=0, salesToday=0;
+            let okbMonth=0, akbMonth=0, salesMonth=0;
+
+            ordersSnap.forEach(d => {
+                const o = d.data();
+                if (!o.createdAt) return;
+                const date = new Date(o.createdAt);
+                const total = Number(o.total||0);
+                if (date >= monthStart) { akbMonth++; salesMonth += total; }
+                if (date >= todayStart) { akbToday++; salesToday += total; }
+            });
+            visitsSnap.forEach(d => {
+                const v = d.data();
+                if (!v.createdAt) return;
+                const date = new Date(v.createdAt);
+                if (date >= monthStart) okbMonth++;
+                if (date >= todayStart) okbToday++;
+            });
+
+            const earnOkbToday = okbToday * SALARY_RATE_OKB;
+            const earnAkbToday = akbToday * SALARY_RATE_AKB;
+            const earnPercentToday = Math.round(salesToday * SALARY_PERCENT);
+            const totalToday = earnOkbToday + earnAkbToday + earnPercentToday;
+
+            const earnOkbMonth = okbMonth * SALARY_RATE_OKB;
+            const earnAkbMonth = akbMonth * SALARY_RATE_AKB;
+            const earnPercentMonth = Math.round(salesMonth * SALARY_PERCENT);
+            const totalMonth = earnOkbMonth + earnAkbMonth + earnPercentMonth;
+
+            container.innerHTML = `
+                <h3 style="font-size:0.9rem; color:var(--text-muted); margin-bottom:10px; text-transform:uppercase;">Сегодня</h3>
+                <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:18px;">
+                    <div style="background:#dbeafe; border-radius:10px; padding:14px; text-align:center;">
+                        <div style="font-size:1.5rem; font-weight:800; color:#2563eb;">${okbToday}</div>
+                        <div style="font-size:0.78rem; color:#2563eb;">Магазинов посещено</div>
+                    </div>
+                    <div style="background:#fef3c7; border-radius:10px; padding:14px; text-align:center;">
+                        <div style="font-size:1.5rem; font-weight:800; color:#d97706;">${akbToday}</div>
+                        <div style="font-size:0.78rem; color:#d97706;">Заявок (АКБ)</div>
+                    </div>
+                    <div style="background:#d1fae5; border-radius:10px; padding:14px; text-align:center;">
+                        <div style="font-size:1.25rem; font-weight:800; color:#059669;">${salesToday.toLocaleString()}₸</div>
+                        <div style="font-size:0.78rem; color:#059669;">Сумма продаж</div>
+                    </div>
+                </div>
+
+                <div style="background:var(--bg,#f8fafc); border:1.5px solid var(--border); border-radius:12px; padding:18px; margin-bottom:24px;">
+                    <div style="font-weight:700; margin-bottom:10px;">💰 Заработано сегодня</div>
+                    <div style="display:flex; justify-content:space-between; padding:5px 0; color:var(--text-muted);"><span>За обходы (${okbToday} × ${SALARY_RATE_OKB}₸)</span><span>${earnOkbToday.toLocaleString()} ₸</span></div>
+                    <div style="display:flex; justify-content:space-between; padding:5px 0; color:var(--text-muted);"><span>За заявки (${akbToday} × ${SALARY_RATE_AKB}₸)</span><span>${earnAkbToday.toLocaleString()} ₸</span></div>
+                    <div style="display:flex; justify-content:space-between; padding:5px 0 12px; color:var(--text-muted); border-bottom:1.5px solid var(--border);"><span>Процент (${SALARY_PERCENT*100}%)</span><span>${earnPercentToday.toLocaleString()} ₸</span></div>
+                    <div style="display:flex; justify-content:space-between; font-weight:800; font-size:1.15rem; padding-top:12px; color:#059669;"><span>Итог за сегодня</span><span>${totalToday.toLocaleString()} ₸</span></div>
+                </div>
+
+                <h3 style="font-size:0.9rem; color:var(--text-muted); margin-bottom:10px; text-transform:uppercase;">За месяц</h3>
+                <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:18px;">
+                    <div style="background:#dbeafe; border-radius:10px; padding:14px; text-align:center;">
+                        <div style="font-size:1.5rem; font-weight:800; color:#2563eb;">${okbMonth}</div>
+                        <div style="font-size:0.78rem; color:#2563eb;">ОКБ</div>
+                    </div>
+                    <div style="background:#fef3c7; border-radius:10px; padding:14px; text-align:center;">
+                        <div style="font-size:1.5rem; font-weight:800; color:#d97706;">${akbMonth}</div>
+                        <div style="font-size:0.78rem; color:#d97706;">АКБ</div>
+                    </div>
+                    <div style="background:#d1fae5; border-radius:10px; padding:14px; text-align:center;">
+                        <div style="font-size:1.25rem; font-weight:800; color:#059669;">${salesMonth.toLocaleString()}₸</div>
+                        <div style="font-size:0.78rem; color:#059669;">Продажи</div>
+                    </div>
+                </div>
+
+                <div style="background:linear-gradient(135deg,#059669,#10b981); border-radius:16px; padding:24px; text-align:center; color:#fff; box-shadow:0 10px 25px rgba(5,150,105,0.35);">
+                    <div style="font-size:0.9rem; opacity:0.9;">Итоговая зарплата за месяц</div>
+                    <div style="font-size:2.2rem; font-weight:900; margin:6px 0;">${totalMonth.toLocaleString()} ₸</div>
+                </div>
+
+                <div style="text-align:center; margin-top:20px;">
+                    <button id="btn-go-history" style="background:none; border:1.5px solid var(--primary); color:var(--primary); padding:10px 20px; border-radius:8px; cursor:pointer; font-weight:600;">
+                        <i class="fa-solid fa-clock-rotate-left"></i> Посмотреть историю по дням
+                    </button>
+                </div>
+            `;
+
+            document.getElementById('btn-go-history')?.addEventListener('click', () => {
+                document.querySelector('[data-page="salary-history"]')?.click();
+            });
+        } catch (e) {
+            container.innerHTML = `<p style="color:red;">Ошибка: ${e.message}</p>`;
+        }
+    },
+
+    // ═══════════════════════════════════════════════════
+    // ИСТОРИЯ НАЧИСЛЕНИЙ ПО ДНЯМ
+    // ═══════════════════════════════════════════════════
+    async salaryHistory() {
+        return `
+            <div class="card" style="max-width:680px; margin:0 auto;">
+                <h2><i class="fa-solid fa-clock-rotate-left" style="color:var(--primary);"></i> История начислений</h2>
+                <p style="color:var(--text-muted); margin-bottom:16px;">Подробный расчёт зарплаты по дням за текущий месяц.</p>
+                <div id="salary-history-list">
+                    <div class="spinner" style="margin:40px auto;"></div>
+                </div>
+            </div>`;
+    },
+
+    async initSalaryHistoryPage() {
+        const container = document.getElementById('salary-history-list');
+        if (!container) return;
+        const agentEmail = auth.currentUser ? auth.currentUser.email : null;
+        if (!agentEmail) { container.innerHTML = '<p>Ошибка пользователя</p>'; return; }
+
+        try {
+            const [ordersSnap, visitsSnap] = await Promise.all([
+                getDocs(query(collection(db, "orders"), where("agentEmail", "==", agentEmail))),
+                getDocs(query(collection(db, "visits"), where("agentEmail", "==", agentEmail)))
+            ]);
+
+            const now = new Date();
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const dayMap = {};
+
+            ordersSnap.forEach(d => {
+                const o = d.data();
+                if (!o.createdAt) return;
+                const date = new Date(o.createdAt);
+                if (date < monthStart) return;
+                const key = date.toLocaleDateString('ru-RU');
+                if (!dayMap[key]) dayMap[key] = { okb: 0, akb: 0, sales: 0, _date: date };
+                dayMap[key].akb++;
+                dayMap[key].sales += Number(o.total || 0);
+            });
+
+            visitsSnap.forEach(d => {
+                const v = d.data();
+                if (!v.createdAt) return;
+                const date = new Date(v.createdAt);
+                if (date < monthStart) return;
+                const key = date.toLocaleDateString('ru-RU');
+                if (!dayMap[key]) dayMap[key] = { okb: 0, akb: 0, sales: 0, _date: date };
+                dayMap[key].okb++;
+            });
+
+            const days = Object.entries(dayMap).sort((a,b) => b[1]._date - a[1]._date);
+
+            if (days.length === 0) {
+                container.innerHTML = '<p style="text-align:center; color:var(--text-muted); padding:30px;">Нет начислений за этот месяц.</p>';
+                return;
+            }
+
+            container.innerHTML = days.map(([dateStr, d]) => {
+                const earnOkb = d.okb * SALARY_RATE_OKB;
+                const earnAkb = d.akb * SALARY_RATE_AKB;
+                const earnPercent = Math.round(d.sales * SALARY_PERCENT);
+                const total = earnOkb + earnAkb + earnPercent;
+                return `
+                    <div style="background:var(--surface); border:1.5px solid var(--border); border-radius:12px; padding:16px; margin-bottom:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                            <strong style="font-size:1rem;"><i class="fa-solid fa-calendar-day" style="color:var(--primary);"></i> ${dateStr}</strong>
+                            <span style="font-weight:800; color:#059669; font-size:1.1rem;">${total.toLocaleString()} ₸</span>
+                        </div>
+                        <div style="font-size:0.85rem; color:var(--text-muted); line-height:1.7;">
+                            ОКБ: ${d.okb} × ${SALARY_RATE_OKB} ₸ = <strong style="color:var(--text);">${earnOkb.toLocaleString()} ₸</strong><br>
+                            АКБ: ${d.akb} × ${SALARY_RATE_AKB} ₸ = <strong style="color:var(--text);">${earnAkb.toLocaleString()} ₸</strong><br>
+                            Продажи: ${d.sales.toLocaleString()} ₸ × ${SALARY_PERCENT*100}% = <strong style="color:var(--text);">${earnPercent.toLocaleString()} ₸</strong>
+                        </div>
+                    </div>`;
+            }).join('');
+        } catch (e) {
+            container.innerHTML = `<p style="color:red;">Ошибка: ${e.message}</p>`;
         }
     }
 };
