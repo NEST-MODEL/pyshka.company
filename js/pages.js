@@ -1,5 +1,5 @@
 import { db, auth } from './firebase-config.js';
-import { collection, getDocs, doc, updateDoc, addDoc, query, where, deleteDoc }
+import { collection, getDocs, doc, updateDoc, addDoc, query, where, deleteDoc, getDoc, setDoc }
   from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 // ─── Константы расчёта зарплаты (меняй здесь, если ставки изменятся) ───
@@ -129,12 +129,9 @@ export const Pages = {
                         <button id="btn-new-shop" style="padding:10px 18px; background:var(--primary); color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600; white-space:nowrap;">
                             <i class="fa-solid fa-plus"></i> Новый магазин
                         </button>
-                        <button type="button" id="btn-mark-visit" style="padding:10px 18px; background:#3b82f6; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600; white-space:nowrap;">
-                            <i class="fa-solid fa-shoe-prints"></i> Отметить визит
-                        </button>
                     </div>
                     <p style="font-size:0.85rem; color:var(--text-muted); margin-top:8px;">
-                        <i class="fa-solid fa-circle-info"></i> Выберите магазин — данные заполнятся автоматически. «Отметить визит» — если зашли в магазин без заявки (засчитывается ОКБ +100₸).
+                        <i class="fa-solid fa-circle-info"></i> Выберите магазин — данные заполнятся автоматически
                     </p>
                 </div>
 
@@ -310,34 +307,6 @@ export const Pages = {
             document.getElementById('ord-phone').value   = shop.phone   || '';
             if (shop.lat && shop.lng) setMarker(Number(shop.lat), Number(shop.lng));
             if (badge) badge.style.display = 'inline';
-        });
-
-        // --- ОТМЕТИТЬ ВИЗИТ (без создания заявки, только ОКБ) ---
-        document.getElementById('btn-mark-visit')?.addEventListener('click', async () => {
-            const shopName = document.getElementById('ord-name').value.trim();
-
-            if (!shopName) {
-                alert('Выберите магазин из списка или впишите его название в поле "Название магазина" перед отметкой визита.');
-                return;
-            }
-
-            if (!confirm(`Отметить визит в "${shopName}"? Засчитается как ОКБ (+${SALARY_RATE_OKB} ₸) без оформления заявки.`)) {
-                return;
-            }
-
-            const btn = document.getElementById('btn-mark-visit');
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-
-            try {
-                await Pages.markVisit(shopName);
-                alert(`✅ Визит отмечен! +${SALARY_RATE_OKB} ₸ к зарплате за сегодня.`);
-            } catch (err) {
-                alert('Ошибка: ' + err.message);
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fa-solid fa-shoe-prints"></i> Отметить визит';
-            }
         });
 
         // МОДАЛКА
@@ -647,7 +616,7 @@ export const Pages = {
     },
 
     // ═══════════════════════════════════════════════════
-    // ЖУРНАЛ ЗАЯВОК — с фильтрами, итогами, экспортом
+    // ЖУРНАЛ ЗАЯВОК + ЭКСПОРТ ДЛЯ 1С
     // ═══════════════════════════════════════════════════
     async allOrders() {
         return `
@@ -669,40 +638,60 @@ export const Pages = {
                         <option value="Доставлено">Доставлено</option>
                         <option value="Доставлена">Доставлена</option>
                     </select>
-                    <input type="text" id="filter-search" placeholder="🔍 Поиск по магазину..." style="padding:9px 14px; border-radius:8px; border:1.5px solid var(--border); background:var(--surface); color:var(--text); font-size:0.9rem; flex:1; min-width:180px;">
-                    <button id="btn-export-excel" style="padding:9px 16px; background:#059669; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600; font-size:0.9rem; white-space:nowrap;">
-                        <i class="fa-solid fa-file-excel"></i> Экспорт Excel
+                    <input type="text" id="filter-search" placeholder="🔍 Поиск по магазину / ИП..." style="padding:9px 14px; border-radius:8px; border:1.5px solid var(--border); background:var(--surface); color:var(--text); font-size:0.9rem; flex:1; min-width:180px;">
+                </div>
+
+                <!-- Кнопки экспорта -->
+                <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px;">
+                    <button id="btn-export-excel" style="padding:10px 18px; background:#059669; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600; font-size:0.9rem; display:flex; align-items:center; gap:8px;">
+                        <i class="fa-solid fa-file-excel"></i> Excel (для бухгалтера)
                     </button>
+                    <button id="btn-export-1c-xml" style="padding:10px 18px; background:#d97706; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600; font-size:0.9rem; display:flex; align-items:center; gap:8px;">
+                        <i class="fa-solid fa-file-code"></i> XML для 1С
+                    </button>
+                    <button id="btn-export-1c-csv" style="padding:10px 18px; background:#7c3aed; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600; font-size:0.9rem; display:flex; align-items:center; gap:8px;">
+                        <i class="fa-solid fa-file-csv"></i> CSV для 1С
+                    </button>
+                    <div style="flex:1; background:#fef3c7; border:1px solid #fcd34d; border-radius:8px; padding:10px 14px; font-size:0.82rem; color:#92400e; display:flex; align-items:center; gap:8px;">
+                        <i class="fa-solid fa-circle-info"></i>
+                        XML и CSV загружаются в 1С через: <strong>Файл → Открыть</strong> или <strong>Сервис → Обмен данными</strong>
+                    </div>
                 </div>
 
                 <!-- Итоги -->
                 <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
-                    <div style="background:#dbeafe; border-radius:8px; padding:10px 18px; flex:1; min-width:140px;">
-                        <div style="font-size:0.8rem; color:#2563eb;">Заявок в выборке</div>
+                    <div style="background:#dbeafe; border-radius:8px; padding:10px 18px; flex:1; min-width:120px;">
+                        <div style="font-size:0.8rem; color:#2563eb;">Заявок</div>
                         <div id="summary-count" style="font-size:1.4rem; font-weight:800; color:#2563eb;">0</div>
                     </div>
-                    <div style="background:#d1fae5; border-radius:8px; padding:10px 18px; flex:1; min-width:140px;">
+                    <div style="background:#d1fae5; border-radius:8px; padding:10px 18px; flex:1; min-width:120px;">
                         <div style="font-size:0.8rem; color:#059669;">Общая сумма</div>
                         <div id="summary-total" style="font-size:1.4rem; font-weight:800; color:#059669;">0 ₸</div>
                     </div>
-                    <div style="background:#fef3c7; border-radius:8px; padding:10px 18px; flex:1; min-width:140px;">
+                    <div style="background:#fef3c7; border-radius:8px; padding:10px 18px; flex:1; min-width:120px;">
                         <div style="font-size:0.8rem; color:#d97706;">Доставлено</div>
                         <div id="summary-delivered" style="font-size:1.4rem; font-weight:800; color:#d97706;">0</div>
+                    </div>
+                    <div style="background:#f3e8ff; border-radius:8px; padding:10px 18px; flex:1; min-width:120px;">
+                        <div style="font-size:0.8rem; color:#7c3aed;">Ср. чек</div>
+                        <div id="summary-avg" style="font-size:1.4rem; font-weight:800; color:#7c3aed;">0 ₸</div>
                     </div>
                 </div>
 
                 <div class="table-responsive">
                     <table>
                         <thead><tr>
-                            <th>Дата</th>
+                            <th>Дата и время</th>
                             <th>Магазин / ИП</th>
+                            <th>Адрес</th>
+                            <th>Телефон</th>
                             <th>Товары</th>
                             <th>Торговый</th>
                             <th>Сумма</th>
                             <th>Статус</th>
                         </tr></thead>
                         <tbody id="all-orders-table-body">
-                            <tr><td colspan="6" style="text-align:center;">Загрузка...</td></tr>
+                            <tr><td colspan="8" style="text-align:center;">Загрузка...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -716,64 +705,56 @@ export const Pages = {
         let allOrders = [];
 
         try {
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Загрузка данных...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">Загрузка данных...</td></tr>';
             const snap = await getDocs(collection(db, "orders"));
-
             snap.docs.forEach(d => allOrders.push({ id: d.id, ...d.data() }));
             allOrders.sort((a, b) => new Date(b.createdAt||0) - new Date(a.createdAt||0));
-
             renderTable();
         } catch (err) {
-            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:red;">Ошибка: ${err.message}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:red;">Ошибка: ${err.message}</td></tr>`;
         }
 
         function getDateRange(period) {
             const now = new Date();
-            if (period === 'today') {
-                const start = new Date(now); start.setHours(0,0,0,0);
-                return { start, end: now };
-            }
-            if (period === 'week') {
-                const start = new Date(now); start.setDate(now.getDate() - now.getDay() + 1); start.setHours(0,0,0,0);
-                return { start, end: now };
-            }
-            if (period === 'month') {
-                const start = new Date(now.getFullYear(), now.getMonth(), 1);
-                return { start, end: now };
-            }
+            if (period === 'today') { const s = new Date(now); s.setHours(0,0,0,0); return { start: s, end: now }; }
+            if (period === 'week')  { const s = new Date(now); s.setDate(now.getDate() - now.getDay() + 1); s.setHours(0,0,0,0); return { start: s, end: now }; }
+            if (period === 'month') { return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: now }; }
             return null;
         }
 
-        function renderTable() {
-            const period  = document.getElementById('filter-period')?.value || 'all';
-            const status  = document.getElementById('filter-status')?.value || 'all';
-            const search  = (document.getElementById('filter-search')?.value || '').toLowerCase();
-            const range   = getDateRange(period);
-
-            const filtered = allOrders.filter(o => {
-                if (range && o.createdAt) {
-                    const d = new Date(o.createdAt);
-                    if (d < range.start || d > range.end) return false;
-                }
+        function getFiltered() {
+            const period = document.getElementById('filter-period')?.value || 'all';
+            const status = document.getElementById('filter-status')?.value || 'all';
+            const search = (document.getElementById('filter-search')?.value || '').toLowerCase();
+            const range  = getDateRange(period);
+            return allOrders.filter(o => {
+                if (range && o.createdAt && (new Date(o.createdAt) < range.start || new Date(o.createdAt) > range.end)) return false;
                 if (status !== 'all' && o.status !== status) return false;
-                if (search && !((o.name||'').toLowerCase().includes(search) || (o.ip||'').toLowerCase().includes(search))) return false;
+                if (search && !((o.name||'').toLowerCase().includes(search) || (o.ip||'').toLowerCase().includes(search) || (o.agentEmail||'').toLowerCase().includes(search))) return false;
                 return true;
             });
+        }
 
-            // Итоги
-            const totalSum   = filtered.reduce((s, o) => s + Number(o.total||0), 0);
-            const delivered  = filtered.filter(o => o.status === 'Доставлено' || o.status === 'Доставлена').length;
+        function renderTable() {
+            const filtered = getFiltered();
+            const totalSum  = filtered.reduce((s, o) => s + Number(o.total||0), 0);
+            const delivered = filtered.filter(o => o.status === 'Доставлено' || o.status === 'Доставлена').length;
+            const avg = filtered.length > 0 ? Math.round(totalSum / filtered.length) : 0;
+
             document.getElementById('summary-count').innerText     = filtered.length;
             document.getElementById('summary-total').innerText     = totalSum.toLocaleString() + ' ₸';
             document.getElementById('summary-delivered').innerText = delivered;
+            document.getElementById('summary-avg').innerText       = avg.toLocaleString() + ' ₸';
 
             if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:30px; color:var(--text-muted);">Нет заявок по выбранным фильтрам</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:30px; color:var(--text-muted);">Нет заявок по выбранным фильтрам</td></tr>`;
                 return;
             }
 
             tbody.innerHTML = filtered.map(o => {
-                const date = o.createdAt ? new Date(o.createdAt).toLocaleDateString('ru-RU') : '—';
+                const dt = o.createdAt ? new Date(o.createdAt) : null;
+                const date = dt ? dt.toLocaleDateString('ru-RU') : '—';
+                const time = dt ? dt.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit' }) : '';
                 const total = Number(o.total||0).toLocaleString();
                 let badgeClass = 'badge-new';
                 if (o.status === 'Принята')  badgeClass = 'badge-accepted';
@@ -781,84 +762,243 @@ export const Pages = {
                 if (o.status === 'Доставлено' || o.status === 'Доставлена') badgeClass = 'badge-delivered';
                 return `
                     <tr>
-                        <td>${date}</td>
+                        <td><strong>${date}</strong><br><small style="color:var(--text-muted);">${time}</small></td>
                         <td><strong>${o.name||'—'}</strong><br><small style="color:var(--text-muted);">${o.ip||'—'}</small></td>
-                        <td><span style="font-size:0.88rem; color:var(--text-muted);">${o.items||'—'}</span></td>
-                        <td style="font-size:0.88rem;">${o.agentEmail||'—'}</td>
+                        <td style="font-size:0.85rem;">${o.address||'—'}</td>
+                        <td style="font-size:0.85rem;"><a href="tel:${o.phone}" style="color:var(--primary);">${o.phone||'—'}</a></td>
+                        <td><span style="font-size:0.83rem; color:var(--text-muted);">${o.items||'—'}</span></td>
+                        <td style="font-size:0.83rem;">${o.agentEmail||'—'}</td>
                         <td><strong style="color:var(--primary);">${total} ₸</strong></td>
                         <td><span class="badge ${badgeClass}">${o.status||'Новая'}</span></td>
                     </tr>`;
             }).join('');
         }
 
-        // Слушатели фильтров
-        ['filter-period','filter-status'].forEach(id => {
-            document.getElementById(id)?.addEventListener('change', renderTable);
-        });
+        ['filter-period','filter-status'].forEach(id => document.getElementById(id)?.addEventListener('change', renderTable));
         document.getElementById('filter-search')?.addEventListener('input', renderTable);
 
-        // ЭКСПОРТ EXCEL (через SheetJS CDN)
+        // ─── ЭКСПОРТ EXCEL (подробный для бухгалтера) ───────────────
         document.getElementById('btn-export-excel')?.addEventListener('click', async () => {
             const btn = document.getElementById('btn-export-excel');
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Экспорт...';
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Формирую...';
             btn.disabled = true;
-
             try {
-                // Загружаем SheetJS если ещё не загружен
-                if (!window.XLSX) {
-                    await new Promise((resolve, reject) => {
-                        const s = document.createElement('script');
-                        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-                        s.onload = resolve; s.onerror = reject;
-                        document.head.appendChild(s);
-                    });
-                }
+                if (!window.XLSX) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
 
-                const period = document.getElementById('filter-period')?.value || 'all';
-                const status = document.getElementById('filter-status')?.value || 'all';
-                const search = (document.getElementById('filter-search')?.value || '').toLowerCase();
-                const range  = getDateRange(period);
+                const filtered = getFiltered();
+                const dateStr  = new Date().toLocaleDateString('ru-RU').replace(/\./g, '-');
+                const period   = document.getElementById('filter-period')?.value || 'all';
 
-                const filtered = allOrders.filter(o => {
-                    if (range && o.createdAt && new Date(o.createdAt) < range.start) return false;
-                    if (status !== 'all' && o.status !== status) return false;
-                    if (search && !((o.name||'').toLowerCase().includes(search))) return false;
-                    return true;
+                // Лист 1 — полная детализация
+                const rows = filtered.map((o, i) => {
+                    const dt = o.createdAt ? new Date(o.createdAt) : null;
+                    return {
+                        '№':                   i + 1,
+                        'Дата':                dt ? dt.toLocaleDateString('ru-RU') : '—',
+                        'Время':               dt ? dt.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit' }) : '—',
+                        'Название магазина':   o.name || '—',
+                        'ИП владельца':        o.ip || '—',
+                        'Адрес':               o.address || '—',
+                        'Телефон':             o.phone || '—',
+                        'Товары':              o.items || '—',
+                        'Торговый представитель': o.agentEmail || '—',
+                        'Сумма (₸)':           Number(o.total || 0),
+                        'Статус':              o.status || '—',
+                        'Комментарий':         o.comment || '—',
+                    };
                 });
 
-                const rows = filtered.map(o => ({
-                    'Дата':                o.createdAt ? new Date(o.createdAt).toLocaleDateString('ru-RU') : '—',
-                    'Магазин':             o.name || '—',
-                    'ИП':                  o.ip || '—',
-                    'Адрес':               o.address || '—',
-                    'Телефон':             o.phone || '—',
-                    'Товары':              o.items || '—',
-                    'Торговый':            o.agentEmail || '—',
-                    'Сумма (₸)':           Number(o.total || 0),
-                    'Статус':              o.status || '—',
-                }));
-
-                // Итоговая строка
                 const totalSum = filtered.reduce((s,o) => s + Number(o.total||0), 0);
-                rows.push({ 'Дата': '', 'Магазин': '', 'ИП': '', 'Адрес': '', 'Телефон': '', 'Товары': '', 'Торговый': 'ИТОГО:', 'Сумма (₸)': totalSum, 'Статус': '' });
+                // Пустая строка + итог
+                rows.push({});
+                rows.push({
+                    '№': '', 'Дата': '', 'Время': '', 'Название магазина': '',
+                    'ИП владельца': '', 'Адрес': '', 'Телефон': '', 'Товары': '',
+                    'Торговый представитель': 'ИТОГО:',
+                    'Сумма (₸)': totalSum, 'Статус': '', 'Комментарий': ''
+                });
 
-                const ws = XLSX.utils.json_to_sheet(rows);
-                ws['!cols'] = [10,20,18,25,15,30,25,14,12].map(w => ({ wch: w }));
+                const ws1 = XLSX.utils.json_to_sheet(rows);
+                ws1['!cols'] = [4,12,8,22,20,28,16,35,28,14,14,25].map(w => ({ wch: w }));
+
+                // Лист 2 — сводка по торговым
+                const agentMap = {};
+                filtered.forEach(o => {
+                    const a = o.agentEmail || 'Не указан';
+                    if (!agentMap[a]) agentMap[a] = { count: 0, total: 0 };
+                    agentMap[a].count++;
+                    agentMap[a].total += Number(o.total||0);
+                });
+                const summaryRows = Object.entries(agentMap).map(([email, v]) => ({
+                    'Торговый представитель': email,
+                    'Количество заявок':      v.count,
+                    'Общая сумма (₸)':        v.total,
+                    'Средний чек (₸)':        v.count ? Math.round(v.total / v.count) : 0,
+                }));
+                const ws2 = XLSX.utils.json_to_sheet(summaryRows);
+                ws2['!cols'] = [30, 18, 18, 18].map(w => ({ wch: w }));
+
+                // Лист 3 — сводка по магазинам
+                const shopMap = {};
+                filtered.forEach(o => {
+                    const key = o.name || 'Без названия';
+                    if (!shopMap[key]) shopMap[key] = { ip: o.ip||'—', address: o.address||'—', phone: o.phone||'—', count: 0, total: 0 };
+                    shopMap[key].count++;
+                    shopMap[key].total += Number(o.total||0);
+                });
+                const shopRows = Object.entries(shopMap)
+                    .sort((a,b) => b[1].total - a[1].total)
+                    .map(([name, v]) => ({
+                        'Название магазина': name,
+                        'ИП':               v.ip,
+                        'Адрес':            v.address,
+                        'Телефон':          v.phone,
+                        'Заявок':           v.count,
+                        'Сумма (₸)':        v.total,
+                    }));
+                const ws3 = XLSX.utils.json_to_sheet(shopRows);
+                ws3['!cols'] = [22,20,28,16,10,14].map(w => ({ wch: w }));
+
                 const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, 'Заявки');
+                XLSX.utils.book_append_sheet(wb, ws1, 'Заявки (детализация)');
+                XLSX.utils.book_append_sheet(wb, ws2, 'По торговым');
+                XLSX.utils.book_append_sheet(wb, ws3, 'По магазинам');
 
-                const dateStr = new Date().toLocaleDateString('ru-RU').replace(/\./g, '-');
-                XLSX.writeFile(wb, `Пышка_заявки_${dateStr}.xlsx`);
+                XLSX.writeFile(wb, `Пышка_${period}_${dateStr}.xlsx`);
             } catch (err) {
-                alert('Ошибка экспорта: ' + err.message);
+                alert('Ошибка экспорта Excel: ' + err.message);
             } finally {
-                btn.innerHTML = '<i class="fa-solid fa-file-excel"></i> Экспорт Excel';
+                btn.innerHTML = '<i class="fa-solid fa-file-excel"></i> Excel (для бухгалтера)';
                 btn.disabled = false;
             }
         });
+
+        // ─── ЭКСПОРТ XML ДЛЯ 1С ─────────────────────────────────────
+        document.getElementById('btn-export-1c-xml')?.addEventListener('click', () => {
+            const btn = document.getElementById('btn-export-1c-xml');
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Формирую XML...';
+            btn.disabled = true;
+            try {
+                const filtered = getFiltered();
+                const now = new Date();
+                const dateStr = now.toLocaleDateString('ru-RU').replace(/\./g, '-');
+                const totalSum = filtered.reduce((s,o) => s + Number(o.total||0), 0);
+
+                const esc = (s) => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+                const ordersXml = filtered.map((o, i) => {
+                    const dt = o.createdAt ? new Date(o.createdAt) : now;
+                    return `
+        <Документ НомерСтроки="${i+1}">
+            <Номер>${esc(o.id?.slice(-6) || i+1)}</Номер>
+            <Дата>${dt.toLocaleDateString('ru-RU')}</Дата>
+            <Время>${dt.toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'})}</Время>
+            <Контрагент>
+                <НазваниеМагазина>${esc(o.name)}</НазваниеМагазина>
+                <ИП>${esc(o.ip)}</ИП>
+                <Адрес>${esc(o.address)}</Адрес>
+                <Телефон>${esc(o.phone)}</Телефон>
+            </Контрагент>
+            <ТорговыйПредставитель>${esc(o.agentEmail)}</ТорговыйПредставитель>
+            <Товары>${esc(o.items)}</Товары>
+            <Комментарий>${esc(o.comment)}</Комментарий>
+            <Сумма>${Number(o.total||0)}</Сумма>
+            <Статус>${esc(o.status)}</Статус>
+        </Документ>`;
+                }).join('');
+
+                const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<КоммерческаяИнформация ВерсияФормата="2.0" ДатаФормирования="${now.toLocaleDateString('ru-RU')}" Организация="Пышка">
+    <ЗаголовокПакета>
+        <НазваниеОрганизации>Пышка</НазваниеОрганизации>
+        <ДатаФормирования>${now.toLocaleDateString('ru-RU')}</ДатаФормирования>
+        <КоличествоДокументов>${filtered.length}</КоличествоДокументов>
+        <ОбщаяСумма>${totalSum}</ОбщаяСумма>
+    </ЗаголовокПакета>
+    <Заявки>${ordersXml}
+    </Заявки>
+</КоммерческаяИнформация>`;
+
+                downloadFile(`Пышка_1С_${dateStr}.xml`, xml, 'application/xml');
+            } catch (err) {
+                alert('Ошибка XML: ' + err.message);
+            } finally {
+                btn.innerHTML = '<i class="fa-solid fa-file-code"></i> XML для 1С';
+                btn.disabled = false;
+            }
+        });
+
+        // ─── ЭКСПОРТ CSV ДЛЯ 1С ─────────────────────────────────────
+        document.getElementById('btn-export-1c-csv')?.addEventListener('click', () => {
+            const btn = document.getElementById('btn-export-1c-csv');
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Формирую CSV...';
+            btn.disabled = true;
+            try {
+                const filtered = getFiltered();
+                const dateStr  = new Date().toLocaleDateString('ru-RU').replace(/\./g, '-');
+
+                const header = [
+                    'Номер','Дата','Время','Название магазина','ИП владельца',
+                    'Адрес','Телефон','Товары','Торговый представитель',
+                    'Сумма (тенге)','Статус','Комментарий'
+                ];
+
+                const csvRows = [header];
+                filtered.forEach((o, i) => {
+                    const dt = o.createdAt ? new Date(o.createdAt) : new Date();
+                    const csvCell = (v) => `"${String(v||'').replace(/"/g,'""')}"`;
+                    csvRows.push([
+                        i+1,
+                        csvCell(dt.toLocaleDateString('ru-RU')),
+                        csvCell(dt.toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'})),
+                        csvCell(o.name),
+                        csvCell(o.ip),
+                        csvCell(o.address),
+                        csvCell(o.phone),
+                        csvCell(o.items),
+                        csvCell(o.agentEmail),
+                        Number(o.total||0),
+                        csvCell(o.status),
+                        csvCell(o.comment),
+                    ]);
+                });
+
+                // Итоговая строка
+                const totalSum = filtered.reduce((s,o) => s + Number(o.total||0), 0);
+                csvRows.push([]);
+                csvRows.push(['','','','','','','','','ИТОГО:', totalSum,'','']);
+
+                const csvContent = '\uFEFF' + csvRows.map(r => r.join(';')).join('\n');
+                downloadFile(`Пышка_1С_${dateStr}.csv`, csvContent, 'text/csv;charset=utf-8');
+            } catch (err) {
+                alert('Ошибка CSV: ' + err.message);
+            } finally {
+                btn.innerHTML = '<i class="fa-solid fa-file-csv"></i> CSV для 1С';
+                btn.disabled = false;
+            }
+        });
+
+        // ─── ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ─────────────────────────────────
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = src; s.onload = resolve; s.onerror = reject;
+                document.head.appendChild(s);
+            });
+        }
+
+        function downloadFile(filename, content, type) {
+            const blob = new Blob([content], { type });
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href = url; a.download = filename;
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
     },
 
-    // ═══════════════════════════════════════════════════
+        // ═══════════════════════════════════════════════════
     // ПУТЕВОЙ ЛИСТ ВОДИТЕЛЯ
     // ═══════════════════════════════════════════════════
     async driver() {
@@ -1173,32 +1313,154 @@ export const Pages = {
     },
 
     // ═══════════════════════════════════════════════════
-    // ОТМЕТИТЬ ВИЗИТ (вызывается с кнопки в createOrder)
+    // ОТЧЁТ ТОРГОВОГО — заполняется раз в день (ОКБ, АКБ, сумма)
     // ═══════════════════════════════════════════════════
-    async markVisit(shopName) {
+    async dailyReport() {
+        return `
+            <div class="card" style="max-width:600px; margin:0 auto;">
+                <h2><i class="fa-solid fa-clipboard-list" style="color:var(--primary);"></i> Отчёт за день</h2>
+                <p style="color:var(--text-muted); margin-bottom:20px;">Заполните итоги по своей работе за сегодня. Можно отправить только один раз — после этого доступно только редактирование.</p>
+
+                <div id="report-status-banner" style="display:none; background:#dbeafe; border:1.5px solid #93c5fd; border-radius:10px; padding:12px 16px; margin-bottom:18px; color:#1e40af; font-size:0.9rem;">
+                    <i class="fa-solid fa-circle-check"></i> Отчёт за сегодня уже отправлен. Вы можете отредактировать его ниже.
+                </div>
+
+                <form id="daily-report-form">
+                    <div class="form-group">
+                        <label style="font-weight:600;"><i class="fa-solid fa-shoe-prints" style="color:#2563eb;"></i> ОКБ — посещено магазинов за сегодня</label>
+                        <input type="number" id="report-okb" min="0" required placeholder="Например: 30" style="font-size:1.1rem; font-weight:600;">
+                    </div>
+                    <div class="form-group">
+                        <label style="font-weight:600;"><i class="fa-solid fa-file-invoice" style="color:#d97706;"></i> АКБ — из них с заявкой</label>
+                        <input type="number" id="report-akb" min="0" required placeholder="Например: 5" style="font-size:1.1rem; font-weight:600;">
+                        <p style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">АКБ не может быть больше ОКБ</p>
+                    </div>
+                    <div class="form-group">
+                        <label style="font-weight:600;"><i class="fa-solid fa-tenge-sign" style="color:#059669;"></i> Общая сумма всех заявок за сегодня (₸)</label>
+                        <input type="number" id="report-total" min="0" required placeholder="Например: 25000" style="font-size:1.1rem; font-weight:600;">
+                    </div>
+
+                    <div id="report-preview" style="background:var(--surface); border:1.5px solid var(--border); border-radius:10px; padding:16px; margin:18px 0; display:none;">
+                        <div style="font-weight:700; margin-bottom:10px; font-size:0.9rem;">💰 Предварительный расчёт</div>
+                        <div id="report-preview-content" style="font-size:0.88rem; color:var(--text-muted); line-height:1.8;"></div>
+                    </div>
+
+                    <button type="submit" id="btn-submit-report" class="btn btn-primary btn-block" style="padding:14px; font-size:1.05rem; font-weight:700;">
+                        <i class="fa-solid fa-paper-plane"></i> Отправить отчёт
+                    </button>
+                </form>
+            </div>`;
+    },
+
+    async initDailyReportPage() {
+        const form = document.getElementById('daily-report-form');
+        if (!form) return;
+
         const agentEmail = auth.currentUser ? auth.currentUser.email : null;
-        if (!agentEmail) { alert('Ошибка: пользователь не определён'); return false; }
+        if (!agentEmail) return;
+
+        const todayKey = new Date().toLocaleDateString('ru-RU').replace(/\./g, '-'); // DD-MM-YYYY
+        const reportId = `${agentEmail}_${todayKey}`;
+
+        const okbInput   = document.getElementById('report-okb');
+        const akbInput   = document.getElementById('report-akb');
+        const totalInput = document.getElementById('report-total');
+        const preview    = document.getElementById('report-preview');
+        const previewContent = document.getElementById('report-preview-content');
+        const submitBtn  = document.getElementById('btn-submit-report');
+        const banner     = document.getElementById('report-status-banner');
+
+        let existingReport = null;
+
+        // Проверяем — есть ли уже отчёт за сегодня
         try {
-            await addDoc(collection(db, "visits"), {
-                agentEmail,
-                shopName: shopName || 'Без названия',
-                createdAt: new Date().toISOString()
-            });
-            return true;
-        } catch (err) {
-            alert('Ошибка при отметке визита: ' + err.message);
-            return false;
+            const docSnap = await getDoc(doc(db, "dailyReports", reportId));
+            if (docSnap.exists()) {
+                existingReport = docSnap.data();
+                okbInput.value = existingReport.okb;
+                akbInput.value = existingReport.akb;
+                totalInput.value = existingReport.total;
+                banner.style.display = 'block';
+                submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Обновить отчёт';
+                updatePreview();
+            }
+        } catch (e) {
+            console.error("Ошибка проверки отчёта:", e);
         }
+
+        function updatePreview() {
+            const okb = Number(okbInput.value) || 0;
+            const akb = Number(akbInput.value) || 0;
+            const total = Number(totalInput.value) || 0;
+
+            if (okb === 0 && akb === 0 && total === 0) { preview.style.display = 'none'; return; }
+
+            const earnOkb = okb * SALARY_RATE_OKB;
+            const earnAkb = akb * SALARY_RATE_AKB;
+            const earnPercent = Math.round(total * SALARY_PERCENT);
+            const sum = earnOkb + earnAkb + earnPercent;
+
+            previewContent.innerHTML = `
+                ОКБ: ${okb} × ${SALARY_RATE_OKB} ₸ = <strong style="color:var(--text);">${earnOkb.toLocaleString()} ₸</strong><br>
+                АКБ: ${akb} × ${SALARY_RATE_AKB} ₸ = <strong style="color:var(--text);">${earnAkb.toLocaleString()} ₸</strong><br>
+                Продажи: ${total.toLocaleString()} ₸ × ${SALARY_PERCENT*100}% = <strong style="color:var(--text);">${earnPercent.toLocaleString()} ₸</strong>
+                <div style="border-top:1px solid var(--border); margin-top:8px; padding-top:8px; font-weight:800; color:#059669; font-size:1.05rem;">
+                    Итого за день: ${sum.toLocaleString()} ₸
+                </div>`;
+            preview.style.display = 'block';
+        }
+
+        [okbInput, akbInput, totalInput].forEach(input => {
+            input.addEventListener('input', updatePreview);
+        });
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const okb = Number(okbInput.value);
+            const akb = Number(akbInput.value);
+            const total = Number(totalInput.value);
+
+            if (akb > okb) {
+                alert('АКБ не может быть больше ОКБ! Проверьте данные.');
+                return;
+            }
+            if (okb < 0 || akb < 0 || total < 0) {
+                alert('Значения не могут быть отрицательными.');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Сохраняю...';
+
+            try {
+                await setDoc(doc(db, "dailyReports", reportId), {
+                    agentEmail,
+                    okb, akb, total,
+                    date: todayKey,
+                    createdAt: existingReport ? existingReport.createdAt : new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                });
+
+                alert(existingReport ? '✅ Отчёт обновлён!' : '✅ Отчёт отправлен!');
+                existingReport = { okb, akb, total };
+                banner.style.display = 'block';
+                submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Обновить отчёт';
+            } catch (err) {
+                alert('Ошибка сохранения: ' + err.message);
+            } finally {
+                submitBtn.disabled = false;
+            }
+        });
     },
 
     // ═══════════════════════════════════════════════════
-    // РАЗДЕЛ "ЗАРПЛАТА" — список сотрудников (бухгалтер/руководитель)
+    // РАЗДЕЛ "ЗАРПЛАТА" — для руководителя/бухгалтера (на основе отчётов)
     // ═══════════════════════════════════════════════════
     async salary() {
         return `
             <div class="card">
-                <h2><i class="fa-solid fa-money-bill-wave" style="color:var(--primary);"></i> Расчёт зарплаты</h2>
-                <p style="color:var(--text-muted); margin-bottom:20px;">Автоматический расчёт на основе посещений, заявок и продаж за текущий месяц.</p>
+                <h2><i class="fa-solid fa-money-bill-wave" style="color:var(--primary);"></i> Зарплата и отчёты сотрудников</h2>
+                <p style="color:var(--text-muted); margin-bottom:20px;">Расчёт на основе ежедневных отчётов торговых представителей за текущий месяц.</p>
                 <div id="salary-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:16px;">
                     <p style="color:var(--text-muted);">Загрузка сотрудников...</p>
                 </div>
@@ -1215,14 +1477,14 @@ export const Pages = {
         const grid = document.getElementById('salary-grid');
         if (!grid) return;
         try {
-            const [usersSnap, ordersSnap, visitsSnap] = await Promise.all([
+            const [usersSnap, reportsSnap] = await Promise.all([
                 getDocs(collection(db, "users")),
-                getDocs(collection(db, "orders")),
-                getDocs(collection(db, "visits"))
+                getDocs(collection(db, "dailyReports"))
             ]);
 
             const now = new Date();
             const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
             const agents = [];
             usersSnap.forEach(d => {
                 const u = d.data();
@@ -1235,26 +1497,21 @@ export const Pages = {
             }
 
             const stats = {};
-            agents.forEach(a => { stats[a.email] = { okbMonth: 0, akbMonth: 0, salesMonth: 0 }; });
+            agents.forEach(a => { stats[a.email] = { okbMonth: 0, akbMonth: 0, salesMonth: 0, daysReported: 0 }; });
 
-            ordersSnap.forEach(d => {
-                const o = d.data();
-                if (!o.agentEmail || !stats[o.agentEmail]) return;
-                if (!o.createdAt || new Date(o.createdAt) < monthStart) return;
-                stats[o.agentEmail].akbMonth++;
-                stats[o.agentEmail].salesMonth += Number(o.total || 0);
-            });
-
-            visitsSnap.forEach(d => {
-                const v = d.data();
-                if (!v.agentEmail || !stats[v.agentEmail]) return;
-                if (!v.createdAt || new Date(v.createdAt) < monthStart) return;
-                stats[v.agentEmail].okbMonth++;
+            reportsSnap.forEach(d => {
+                const r = d.data();
+                if (!r.agentEmail || !stats[r.agentEmail]) return;
+                if (!r.createdAt || new Date(r.createdAt) < monthStart) return;
+                stats[r.agentEmail].okbMonth += Number(r.okb || 0);
+                stats[r.agentEmail].akbMonth += Number(r.akb || 0);
+                stats[r.agentEmail].salesMonth += Number(r.total || 0);
+                stats[r.agentEmail].daysReported++;
             });
 
             grid.innerHTML = '';
             agents.forEach(a => {
-                const s = stats[a.email] || { okbMonth: 0, akbMonth: 0, salesMonth: 0 };
+                const s = stats[a.email] || { okbMonth: 0, akbMonth: 0, salesMonth: 0, daysReported: 0 };
                 const earnOkb = s.okbMonth * SALARY_RATE_OKB;
                 const earnAkb = s.akbMonth * SALARY_RATE_AKB;
                 const earnPercent = Math.round(s.salesMonth * SALARY_PERCENT);
@@ -1269,7 +1526,7 @@ export const Pages = {
                             </div>
                             <div>
                                 <div style="font-weight:700; font-size:1rem;">${a.name || 'Без имени'}</div>
-                                <div style="font-size:0.8rem; color:var(--text-muted);">${a.role}</div>
+                                <div style="font-size:0.8rem; color:var(--text-muted);">${s.daysReported} отчётов за месяц</div>
                             </div>
                         </div>
                         <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; font-size:0.85rem;">
@@ -1301,7 +1558,7 @@ export const Pages = {
     },
 
     // ═══════════════════════════════════════════════════
-    // ПОДРОБНАЯ КАРТОЧКА СОТРУДНИКА (модалка)
+    // ПОДРОБНАЯ КАРТОЧКА СОТРУДНИКА (модалка) — список отчётов по дням
     // ═══════════════════════════════════════════════════
     async openSalaryCard(agentEmail, agentName) {
         const modal = document.getElementById('modal-salary-card');
@@ -1311,49 +1568,43 @@ export const Pages = {
         content.innerHTML = '<div class="spinner" style="margin:40px auto;"></div>';
 
         try {
-            const [ordersSnap, visitsSnap] = await Promise.all([
-                getDocs(query(collection(db, "orders"), where("agentEmail", "==", agentEmail))),
-                getDocs(query(collection(db, "visits"), where("agentEmail", "==", agentEmail)))
-            ]);
+            const snap = await getDocs(query(collection(db, "dailyReports"), where("agentEmail", "==", agentEmail)));
 
             const now = new Date();
-            const todayStart = new Date(now); todayStart.setHours(0,0,0,0);
             const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-            let okbToday=0, akbToday=0, salesToday=0;
-            let okbMonth=0, akbMonth=0, salesMonth=0;
-            const shopsVisited = new Set();
+            const reports = [];
+            let okbMonth = 0, akbMonth = 0, salesMonth = 0;
 
-            ordersSnap.forEach(d => {
-                const o = d.data();
-                if (!o.createdAt) return;
-                const date = new Date(o.createdAt);
-                const total = Number(o.total||0);
-                if (date >= monthStart) { akbMonth++; salesMonth += total; }
-                if (date >= todayStart) { akbToday++; salesToday += total; }
-                if (o.name) shopsVisited.add(o.name);
+            snap.forEach(d => {
+                const r = d.data();
+                if (!r.createdAt || new Date(r.createdAt) < monthStart) return;
+                reports.push(r);
+                okbMonth += Number(r.okb || 0);
+                akbMonth += Number(r.akb || 0);
+                salesMonth += Number(r.total || 0);
             });
 
-            visitsSnap.forEach(d => {
-                const v = d.data();
-                if (!v.createdAt) return;
-                const date = new Date(v.createdAt);
-                if (date >= monthStart) okbMonth++;
-                if (date >= todayStart) okbToday++;
-                if (v.shopName) shopsVisited.add(v.shopName);
-            });
-
-            const earnOkbToday = okbToday * SALARY_RATE_OKB;
-            const earnAkbToday = akbToday * SALARY_RATE_AKB;
-            const earnPercentToday = Math.round(salesToday * SALARY_PERCENT);
-            const totalToday = earnOkbToday + earnAkbToday + earnPercentToday;
+            reports.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
 
             const earnOkbMonth = okbMonth * SALARY_RATE_OKB;
             const earnAkbMonth = akbMonth * SALARY_RATE_AKB;
             const earnPercentMonth = Math.round(salesMonth * SALARY_PERCENT);
             const totalMonth = earnOkbMonth + earnAkbMonth + earnPercentMonth;
 
-            const routeProgress = shopsVisited.size > 0 ? Math.min(100, Math.round((okbMonth / (okbMonth+5)) * 100)) : 0;
+            const reportsHtml = reports.length > 0 ? reports.map(r => {
+                const earnOkb = Number(r.okb||0) * SALARY_RATE_OKB;
+                const earnAkb = Number(r.akb||0) * SALARY_RATE_AKB;
+                const earnPercent = Math.round(Number(r.total||0) * SALARY_PERCENT);
+                const sum = earnOkb + earnAkb + earnPercent;
+                return `
+                    <div style="background:var(--bg,#f8fafc); border:1px solid var(--border); border-radius:8px; padding:10px 14px; margin-bottom:8px; font-size:0.85rem;">
+                        <div style="display:flex; justify-content:space-between; font-weight:700; margin-bottom:4px;">
+                            <span>${r.date}</span><span style="color:#059669;">${sum.toLocaleString()} ₸</span>
+                        </div>
+                        <div style="color:var(--text-muted);">ОКБ: ${r.okb} • АКБ: ${r.akb} • Продажи: ${Number(r.total||0).toLocaleString()} ₸</div>
+                    </div>`;
+            }).join('') : '<p style="color:var(--text-muted); font-size:0.85rem;">Нет отчётов за этот месяц.</p>';
 
             content.innerHTML = `
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px;">
@@ -1371,61 +1622,16 @@ export const Pages = {
                     </button>
                 </div>
 
-                <h3 style="font-size:0.95rem; color:var(--text-muted); margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px;">📅 Сегодня</h3>
-                <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:18px;">
-                    <div style="background:#dbeafe; border-radius:10px; padding:12px; text-align:center;">
-                        <div style="font-size:1.4rem; font-weight:800; color:#2563eb;">${okbToday}</div>
-                        <div style="font-size:0.75rem; color:#2563eb;">ОКБ (визиты)</div>
-                    </div>
-                    <div style="background:#fef3c7; border-radius:10px; padding:12px; text-align:center;">
-                        <div style="font-size:1.4rem; font-weight:800; color:#d97706;">${akbToday}</div>
-                        <div style="font-size:0.75rem; color:#d97706;">АКБ (заявки)</div>
-                    </div>
-                    <div style="background:#d1fae5; border-radius:10px; padding:12px; text-align:center;">
-                        <div style="font-size:1.2rem; font-weight:800; color:#059669;">${salesToday.toLocaleString()}₸</div>
-                        <div style="font-size:0.75rem; color:#059669;">Продажи</div>
-                    </div>
-                </div>
-
-                <div style="background:var(--bg, #f8fafc); border:1.5px solid var(--border); border-radius:12px; padding:16px; margin-bottom:24px;">
-                    <div style="font-weight:700; margin-bottom:10px; font-size:0.9rem;">💰 Заработано сегодня</div>
-                    <div style="display:flex; justify-content:space-between; font-size:0.88rem; padding:4px 0; color:var(--text-muted);">
-                        <span>За обходы (${okbToday} × ${SALARY_RATE_OKB}₸)</span><span>${earnOkbToday.toLocaleString()} ₸</span>
-                    </div>
-                    <div style="display:flex; justify-content:space-between; font-size:0.88rem; padding:4px 0; color:var(--text-muted);">
-                        <span>За заявки (${akbToday} × ${SALARY_RATE_AKB}₸)</span><span>${earnAkbToday.toLocaleString()} ₸</span>
-                    </div>
-                    <div style="display:flex; justify-content:space-between; font-size:0.88rem; padding:4px 0 10px; color:var(--text-muted); border-bottom:1px solid var(--border);">
-                        <span>Процент с продаж (${(SALARY_PERCENT*100)}%)</span><span>${earnPercentToday.toLocaleString()} ₸</span>
-                    </div>
-                    <div style="display:flex; justify-content:space-between; font-weight:800; font-size:1.1rem; padding-top:10px; color:#059669;">
-                        <span>Итого за день</span><span>${totalToday.toLocaleString()} ₸</span>
-                    </div>
-                </div>
-
-                <h3 style="font-size:0.95rem; color:var(--text-muted); margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px;">📊 За месяц</h3>
-                <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:18px;">
-                    <div style="background:#dbeafe; border-radius:10px; padding:12px; text-align:center;">
-                        <div style="font-size:1.4rem; font-weight:800; color:#2563eb;">${okbMonth}</div>
-                        <div style="font-size:0.75rem; color:#2563eb;">ОКБ всего</div>
-                    </div>
-                    <div style="background:#fef3c7; border-radius:10px; padding:12px; text-align:center;">
-                        <div style="font-size:1.4rem; font-weight:800; color:#d97706;">${akbMonth}</div>
-                        <div style="font-size:0.75rem; color:#d97706;">АКБ всего</div>
-                    </div>
-                    <div style="background:#f3e8ff; border-radius:10px; padding:12px; text-align:center;">
-                        <div style="font-size:1.2rem; font-weight:800; color:#7c3aed;">${routeProgress}%</div>
-                        <div style="font-size:0.75rem; color:#7c3aed;">Маршрут</div>
-                    </div>
-                </div>
-
-                <div style="background:linear-gradient(135deg,#059669,#10b981); border-radius:14px; padding:20px; text-align:center; color:#fff; box-shadow:0 8px 20px rgba(5,150,105,0.3);">
+                <div style="background:linear-gradient(135deg,#059669,#10b981); border-radius:14px; padding:20px; text-align:center; color:#fff; box-shadow:0 8px 20px rgba(5,150,105,0.3); margin-bottom:22px;">
                     <div style="font-size:0.85rem; opacity:0.9; margin-bottom:4px;">Итоговая зарплата за месяц</div>
                     <div style="font-size:2rem; font-weight:900;">${totalMonth.toLocaleString()} ₸</div>
                     <div style="font-size:0.78rem; opacity:0.85; margin-top:6px;">
-                        ОКБ: ${earnOkbMonth.toLocaleString()}₸ • АКБ: ${earnAkbMonth.toLocaleString()}₸ • %: ${earnPercentMonth.toLocaleString()}₸
+                        ОКБ: ${okbMonth} (${earnOkbMonth.toLocaleString()}₸) • АКБ: ${akbMonth} (${earnAkbMonth.toLocaleString()}₸) • %: ${earnPercentMonth.toLocaleString()}₸
                     </div>
                 </div>
+
+                <h3 style="font-size:0.95rem; color:var(--text-muted); margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px;">📋 Отчёты по дням</h3>
+                <div style="max-height:320px; overflow-y:auto;">${reportsHtml}</div>
             `;
 
             document.getElementById('btn-close-salary-modal').onclick = () => { modal.style.display = 'none'; };
@@ -1436,7 +1642,7 @@ export const Pages = {
     },
 
     // ═══════════════════════════════════════════════════
-    // ЛИЧНЫЙ КАБИНЕТ ТОРГОВОГО — своя зарплата
+    // ЛИЧНЫЙ КАБИНЕТ ТОРГОВОГО — своя зарплата (на основе отчётов)
     // ═══════════════════════════════════════════════════
     async myEarnings() {
         return `
@@ -1455,32 +1661,26 @@ export const Pages = {
         if (!agentEmail) { container.innerHTML = '<p>Ошибка: не определён пользователь</p>'; return; }
 
         try {
-            const [ordersSnap, visitsSnap] = await Promise.all([
-                getDocs(query(collection(db, "orders"), where("agentEmail", "==", agentEmail))),
-                getDocs(query(collection(db, "visits"), where("agentEmail", "==", agentEmail)))
-            ]);
+            const snap = await getDocs(query(collection(db, "dailyReports"), where("agentEmail", "==", agentEmail)));
 
             const now = new Date();
-            const todayStart = new Date(now); todayStart.setHours(0,0,0,0);
+            const todayKey = now.toLocaleDateString('ru-RU').replace(/\./g, '-');
             const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
             let okbToday=0, akbToday=0, salesToday=0;
             let okbMonth=0, akbMonth=0, salesMonth=0;
 
-            ordersSnap.forEach(d => {
-                const o = d.data();
-                if (!o.createdAt) return;
-                const date = new Date(o.createdAt);
-                const total = Number(o.total||0);
-                if (date >= monthStart) { akbMonth++; salesMonth += total; }
-                if (date >= todayStart) { akbToday++; salesToday += total; }
-            });
-            visitsSnap.forEach(d => {
-                const v = d.data();
-                if (!v.createdAt) return;
-                const date = new Date(v.createdAt);
-                if (date >= monthStart) okbMonth++;
-                if (date >= todayStart) okbToday++;
+            snap.forEach(d => {
+                const r = d.data();
+                if (!r.createdAt || new Date(r.createdAt) < monthStart) return;
+                okbMonth += Number(r.okb||0);
+                akbMonth += Number(r.akb||0);
+                salesMonth += Number(r.total||0);
+                if (r.date === todayKey) {
+                    okbToday = Number(r.okb||0);
+                    akbToday = Number(r.akb||0);
+                    salesToday = Number(r.total||0);
+                }
             });
 
             const earnOkbToday = okbToday * SALARY_RATE_OKB;
@@ -1498,11 +1698,11 @@ export const Pages = {
                 <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:18px;">
                     <div style="background:#dbeafe; border-radius:10px; padding:14px; text-align:center;">
                         <div style="font-size:1.5rem; font-weight:800; color:#2563eb;">${okbToday}</div>
-                        <div style="font-size:0.78rem; color:#2563eb;">Магазинов посещено</div>
+                        <div style="font-size:0.78rem; color:#2563eb;">ОКБ</div>
                     </div>
                     <div style="background:#fef3c7; border-radius:10px; padding:14px; text-align:center;">
                         <div style="font-size:1.5rem; font-weight:800; color:#d97706;">${akbToday}</div>
-                        <div style="font-size:0.78rem; color:#d97706;">Заявок (АКБ)</div>
+                        <div style="font-size:0.78rem; color:#d97706;">АКБ</div>
                     </div>
                     <div style="background:#d1fae5; border-radius:10px; padding:14px; text-align:center;">
                         <div style="font-size:1.25rem; font-weight:800; color:#059669;">${salesToday.toLocaleString()}₸</div>
@@ -1555,13 +1755,13 @@ export const Pages = {
     },
 
     // ═══════════════════════════════════════════════════
-    // ИСТОРИЯ НАЧИСЛЕНИЙ ПО ДНЯМ
+    // ИСТОРИЯ НАЧИСЛЕНИЙ ПО ДНЯМ (для торгового)
     // ═══════════════════════════════════════════════════
     async salaryHistory() {
         return `
             <div class="card" style="max-width:680px; margin:0 auto;">
                 <h2><i class="fa-solid fa-clock-rotate-left" style="color:var(--primary);"></i> История начислений</h2>
-                <p style="color:var(--text-muted); margin-bottom:16px;">Подробный расчёт зарплаты по дням за текущий месяц.</p>
+                <p style="color:var(--text-muted); margin-bottom:16px;">Подробный расчёт зарплаты по дням на основе ваших отчётов за текущий месяц.</p>
                 <div id="salary-history-list">
                     <div class="spinner" style="margin:40px auto;"></div>
                 </div>
@@ -1575,58 +1775,39 @@ export const Pages = {
         if (!agentEmail) { container.innerHTML = '<p>Ошибка пользователя</p>'; return; }
 
         try {
-            const [ordersSnap, visitsSnap] = await Promise.all([
-                getDocs(query(collection(db, "orders"), where("agentEmail", "==", agentEmail))),
-                getDocs(query(collection(db, "visits"), where("agentEmail", "==", agentEmail)))
-            ]);
+            const snap = await getDocs(query(collection(db, "dailyReports"), where("agentEmail", "==", agentEmail)));
 
             const now = new Date();
             const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-            const dayMap = {};
 
-            ordersSnap.forEach(d => {
-                const o = d.data();
-                if (!o.createdAt) return;
-                const date = new Date(o.createdAt);
-                if (date < monthStart) return;
-                const key = date.toLocaleDateString('ru-RU');
-                if (!dayMap[key]) dayMap[key] = { okb: 0, akb: 0, sales: 0, _date: date };
-                dayMap[key].akb++;
-                dayMap[key].sales += Number(o.total || 0);
+            const reports = [];
+            snap.forEach(d => {
+                const r = d.data();
+                if (!r.createdAt || new Date(r.createdAt) < monthStart) return;
+                reports.push(r);
             });
+            reports.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-            visitsSnap.forEach(d => {
-                const v = d.data();
-                if (!v.createdAt) return;
-                const date = new Date(v.createdAt);
-                if (date < monthStart) return;
-                const key = date.toLocaleDateString('ru-RU');
-                if (!dayMap[key]) dayMap[key] = { okb: 0, akb: 0, sales: 0, _date: date };
-                dayMap[key].okb++;
-            });
-
-            const days = Object.entries(dayMap).sort((a,b) => b[1]._date - a[1]._date);
-
-            if (days.length === 0) {
-                container.innerHTML = '<p style="text-align:center; color:var(--text-muted); padding:30px;">Нет начислений за этот месяц.</p>';
+            if (reports.length === 0) {
+                container.innerHTML = '<p style="text-align:center; color:var(--text-muted); padding:30px;">Нет отчётов за этот месяц.</p>';
                 return;
             }
 
-            container.innerHTML = days.map(([dateStr, d]) => {
-                const earnOkb = d.okb * SALARY_RATE_OKB;
-                const earnAkb = d.akb * SALARY_RATE_AKB;
-                const earnPercent = Math.round(d.sales * SALARY_PERCENT);
+            container.innerHTML = reports.map(r => {
+                const earnOkb = Number(r.okb||0) * SALARY_RATE_OKB;
+                const earnAkb = Number(r.akb||0) * SALARY_RATE_AKB;
+                const earnPercent = Math.round(Number(r.total||0) * SALARY_PERCENT);
                 const total = earnOkb + earnAkb + earnPercent;
                 return `
                     <div style="background:var(--surface); border:1.5px solid var(--border); border-radius:12px; padding:16px; margin-bottom:12px;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                            <strong style="font-size:1rem;"><i class="fa-solid fa-calendar-day" style="color:var(--primary);"></i> ${dateStr}</strong>
+                            <strong style="font-size:1rem;"><i class="fa-solid fa-calendar-day" style="color:var(--primary);"></i> ${r.date}</strong>
                             <span style="font-weight:800; color:#059669; font-size:1.1rem;">${total.toLocaleString()} ₸</span>
                         </div>
                         <div style="font-size:0.85rem; color:var(--text-muted); line-height:1.7;">
-                            ОКБ: ${d.okb} × ${SALARY_RATE_OKB} ₸ = <strong style="color:var(--text);">${earnOkb.toLocaleString()} ₸</strong><br>
-                            АКБ: ${d.akb} × ${SALARY_RATE_AKB} ₸ = <strong style="color:var(--text);">${earnAkb.toLocaleString()} ₸</strong><br>
-                            Продажи: ${d.sales.toLocaleString()} ₸ × ${SALARY_PERCENT*100}% = <strong style="color:var(--text);">${earnPercent.toLocaleString()} ₸</strong>
+                            ОКБ: ${r.okb} × ${SALARY_RATE_OKB} ₸ = <strong style="color:var(--text);">${earnOkb.toLocaleString()} ₸</strong><br>
+                            АКБ: ${r.akb} × ${SALARY_RATE_AKB} ₸ = <strong style="color:var(--text);">${earnAkb.toLocaleString()} ₸</strong><br>
+                            Продажи: ${Number(r.total||0).toLocaleString()} ₸ × ${SALARY_PERCENT*100}% = <strong style="color:var(--text);">${earnPercent.toLocaleString()} ₸</strong>
                         </div>
                     </div>`;
             }).join('');
