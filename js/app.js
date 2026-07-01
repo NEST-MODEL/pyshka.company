@@ -151,6 +151,10 @@ async function navigateTo(pageId) {
             mainContent.innerHTML = await Pages.salary();
             await Pages.initSalaryPage();
             break;
+        case 'daily-report':
+            mainContent.innerHTML = await Pages.dailyReport();
+            await Pages.initDailyReportPage();
+            break;
         case 'my-earnings':
             mainContent.innerHTML = await Pages.myEarnings();
             await Pages.initMyEarningsPage();
