@@ -58,6 +58,12 @@ export const Components = {
                 roles: ['Администратор', 'Руководитель', 'Бухгалтер']
             },
             {
+                id: 'daily-report',
+                label: 'Отчёт за день',
+                icon: 'fa-clipboard-list',
+                roles: ['Торговый представитель']
+            },
+            {
                 id: 'my-earnings',
                 label: 'Моя зарплата',
                 icon: 'fa-wallet',
