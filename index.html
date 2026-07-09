@@ -1,121 +1,601 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Пышка CRM — Внутренняя система</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Заявки — система оформления</title>
+<style>
+  :root{
+    --bg: #f2f8fc;
+    --panel: #ffffff;
+    --accent: #2f8fd1;
+    --accent-dark: #1f6fae;
+    --accent-light: #e8f4fd;
+    --accent-lighter: #f4faff;
+    --border: #dbe9f5;
+    --text: #16232e;
+    --muted: #6d8195;
+    --danger: #e35b5b;
+    --success: #2fb380;
+    --radius: 14px;
+    --shadow: 0 4px 20px rgba(47, 143, 209, 0.08), 0 1px 3px rgba(16,35,46,0.04);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family: 'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif;
+    background: linear-gradient(180deg, #eef7fc 0%, #f6fbfe 100%);
+    color: var(--text);
+    min-height:100vh;
+  }
+  .topbar{
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top:0; z-index: 50;
+    box-shadow: var(--shadow);
+  }
+  .topbar-inner{
+    max-width: 1300px; margin:0 auto; padding: 14px 24px;
+    display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
+  }
+  .brand{ display:flex; align-items:center; gap:10px; font-weight:700; font-size:19px; color:var(--accent-dark);}
+  .brand .dot{ width:12px; height:12px; border-radius:50%; background: linear-gradient(135deg, var(--accent), #7fd0ff); box-shadow: 0 0 0 4px var(--accent-light);}
+  .tabs{ display:flex; gap:8px; background: var(--accent-lighter); padding:5px; border-radius: 999px; border:1px solid var(--border);}
+  .tab{
+    border:none; background:transparent; padding:9px 20px; border-radius:999px; cursor:pointer;
+    font-size:14px; font-weight:600; color: var(--muted); transition: all .15s ease;
+  }
+  .tab.active{ background: var(--accent); color:#fff; box-shadow: 0 3px 10px rgba(47,143,209,.35);}
+  .stat-pill{
+    font-size:13px; color: var(--accent-dark); background: var(--accent-light);
+    padding:7px 14px; border-radius:999px; font-weight:600; border:1px solid var(--border);
+  }
+
+  .container{ max-width:1300px; margin: 0 auto; padding: 24px; }
+  .view{ display:none; }
+  .view.active{ display:block; animation: fadein .25s ease; }
+  @keyframes fadein{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);} }
+
+  .layout{ display:grid; grid-template-columns: 1.5fr 1fr; gap:22px; align-items:start; }
+  @media (max-width: 980px){ .layout{ grid-template-columns: 1fr; } }
+
+  .card{
+    background: var(--panel); border-radius: var(--radius); border:1px solid var(--border);
+    box-shadow: var(--shadow); padding: 20px;
+  }
+  .card + .card{ margin-top:18px; }
+  .card h3{ margin:0 0 14px 0; font-size:15px; color:var(--accent-dark); letter-spacing:.3px; text-transform:uppercase; font-weight:700;}
+
+  .search-wrap{ position:relative; margin-bottom: 16px;}
+  .search-wrap input{
+    width:100%; padding: 13px 16px 13px 42px; border-radius: 12px; border:1.5px solid var(--border);
+    font-size: 15px; background: var(--accent-lighter); color:var(--text); outline:none; transition:.15s;
+  }
+  .search-wrap input:focus{ border-color: var(--accent); background:#fff; box-shadow: 0 0 0 4px var(--accent-light);}
+  .search-wrap svg{ position:absolute; left:14px; top:50%; transform:translateY(-50%); color: var(--muted);}
+
+  .category{ margin-bottom: 10px; }
+  .category-title{
+    font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.6px;
+    color:#fff; background: linear-gradient(90deg, var(--accent), #63b5e8);
+    padding:8px 14px; border-radius: 8px; margin: 18px 0 8px 0; display:inline-flex; align-items:center; gap:8px;
+  }
+  .item-row{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding: 11px 14px; border-radius:10px; border:1px solid transparent;
+    transition:.12s; cursor:pointer;
+  }
+  .item-row:hover{ background: var(--accent-lighter); border-color: var(--border); }
+  .item-info{ display:flex; flex-direction:column; gap:2px; }
+  .item-name{ font-size:14.5px; font-weight:600; color:var(--text); }
+  .item-meta{ font-size:12px; color:var(--muted); display:flex; gap:8px; align-items:center; }
+  .badge{ background: var(--accent-light); color:var(--accent-dark); padding:2px 8px; border-radius:6px; font-size:11px; font-weight:700;}
+  .item-right{ display:flex; align-items:center; gap:12px; flex-shrink:0; }
+  .item-price{ font-weight:700; color:var(--accent-dark); font-size:14.5px; white-space:nowrap;}
+  .add-btn{
+    width:34px; height:34px; border-radius:10px; border:none; background: var(--accent);
+    color:#fff; font-size:20px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    transition:.15s; box-shadow: 0 2px 6px rgba(47,143,209,.3);
+  }
+  .add-btn:hover{ background: var(--accent-dark); transform: scale(1.06); }
+  .no-results{ text-align:center; padding:40px 10px; color:var(--muted); font-size:14px;}
+
+  label.field-label{ font-size:12.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:5px; display:block;}
+  input.text-input{
+    width:100%; padding:11px 13px; border-radius:10px; border:1.5px solid var(--border);
+    font-size:14.5px; background: var(--accent-lighter); outline:none; transition:.15s; color:var(--text);
+    margin-bottom:14px;
+  }
+  input.text-input:focus{ border-color:var(--accent); background:#fff; box-shadow:0 0 0 4px var(--accent-light); }
+
+  .order-list{ display:flex; flex-direction:column; gap:8px; max-height: 320px; overflow-y:auto; margin: 4px 0 14px 0; }
+  .order-item{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background: var(--accent-lighter); border:1px solid var(--border); border-radius:10px; padding:10px 12px;
+  }
+  .order-item .oi-name{ font-size:13.5px; font-weight:600; flex:1; }
+  .order-item .oi-meta{ font-size:11.5px; color:var(--muted); }
+  .qty-control{ display:flex; align-items:center; gap:6px; }
+  .qty-control button{
+    width:24px; height:24px; border-radius:6px; border:1px solid var(--border); background:#fff; cursor:pointer;
+    font-size:14px; color:var(--accent-dark); font-weight:700; display:flex; align-items:center; justify-content:center;
+  }
+  .qty-control button:hover{ background: var(--accent-light); }
+  .qty-control span{ min-width:22px; text-align:center; font-weight:700; font-size:13.5px;}
+  .oi-sum{ font-weight:700; color:var(--accent-dark); font-size:13.5px; min-width:80px; text-align:right;}
+  .remove-btn{ background:none; border:none; color:var(--danger); cursor:pointer; font-size:16px; padding:2px 4px; }
+  .empty-order{ text-align:center; color:var(--muted); font-size:13.5px; padding: 30px 10px; }
+
+  .total-box{
+    background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+    color:#fff; border-radius:12px; padding:16px 18px; margin-top:6px;
+  }
+  .total-row{ display:flex; justify-content:space-between; align-items:center; font-size:14px; opacity:.9; margin-bottom:4px;}
+  .total-row.main{ font-size:22px; font-weight:800; opacity:1; margin-top:6px;}
+  .commission-note{ font-size:12px; opacity:.85; margin-top:6px;}
+
+  .done-btn{
+    width:100%; margin-top:14px; padding:14px; border:none; border-radius:12px;
+    background: var(--success); color:#fff; font-size:15.5px; font-weight:700; cursor:pointer;
+    box-shadow: 0 4px 14px rgba(47,179,128,.35); transition:.15s;
+  }
+  .done-btn:hover{ filter:brightness(1.05); transform: translateY(-1px); }
+  .done-btn:disabled{ background:#b9c7d1; box-shadow:none; cursor:not-allowed; transform:none; }
+
+  .sticky-panel{ position: sticky; top: 90px; }
+
+  /* History view */
+  .history-summary{ display:grid; grid-template-columns: repeat(3,1fr); gap:14px; margin-bottom:20px; }
+  @media (max-width:700px){ .history-summary{ grid-template-columns:1fr; } }
+  .summary-card{
+    background: var(--panel); border-radius: var(--radius); border:1px solid var(--border);
+    box-shadow: var(--shadow); padding:18px; text-align:center;
+  }
+  .summary-card .value{ font-size:26px; font-weight:800; color:var(--accent-dark); }
+  .summary-card .label{ font-size:12.5px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.4px; margin-top:4px;}
+
+  .order-card{
+    background: var(--panel); border:1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding:18px 20px; margin-bottom:14px;
+  }
+  .order-card-top{ display:flex; justify-content:space-between; align-items:flex-start; gap:14px; flex-wrap:wrap; }
+  .order-card-shop{ font-size:16px; font-weight:700; color:var(--text); }
+  .order-card-date{ font-size:12.5px; color:var(--muted); margin-top:2px;}
+  .order-card-meta{ font-size:13px; color:var(--muted); margin-top:6px; }
+  .order-card-right{ text-align:right; }
+  .order-card-total{ font-size:19px; font-weight:800; color:var(--accent-dark); }
+  .order-card-commission{ font-size:13px; color: var(--success); font-weight:700; margin-top:2px; }
+  .expand-btn{
+    margin-top:10px; background:none; border:1px solid var(--border); color:var(--accent-dark);
+    padding:6px 14px; border-radius:8px; font-size:12.5px; cursor:pointer; font-weight:600;
+  }
+  .expand-btn:hover{ background: var(--accent-lighter); }
+  .order-details{ display:none; margin-top:12px; border-top:1px dashed var(--border); padding-top:12px; }
+  .order-details.show{ display:block; }
+  .order-details table{ width:100%; border-collapse:collapse; font-size:13px; }
+  .order-details th{ text-align:left; color:var(--muted); font-weight:700; padding:4px 6px; font-size:11.5px; text-transform:uppercase;}
+  .order-details td{ padding:6px; border-top:1px solid var(--accent-lighter); }
+  .delete-order{ background:none; border:none; color:var(--danger); cursor:pointer; font-size:12.5px; font-weight:600; margin-top:10px; }
+  .empty-history{ text-align:center; padding:60px 20px; color:var(--muted); }
+
+  .toast{
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+    background: var(--success); color:#fff; padding:14px 26px; border-radius:12px; font-weight:600;
+    box-shadow: 0 8px 24px rgba(0,0,0,.15); z-index:200; opacity:0; pointer-events:none; transition: all .3s ease;
+    font-size:14.5px;
+  }
+  .toast.show{ opacity:1; transform: translateX(-50%) translateY(-6px); }
+
+  ::-webkit-scrollbar{ width:8px; }
+  ::-webkit-scrollbar-thumb{ background: var(--border); border-radius:4px; }
+</style>
 </head>
 <body>
 
-    <!-- Экран загрузки -->
-    <div id="app-loader" class="loader-container">
-        <div class="spinner"></div>
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="dot"></span> Заявки</div>
+    <div class="tabs">
+      <button class="tab active" data-view="new">Новая заявка</button>
+      <button class="tab" data-view="history">История заявок</button>
     </div>
+    <div class="stat-pill" id="headerCommission">Заработано всего: 0 тг</div>
+  </div>
+</div>
 
-    <!-- Основной интерфейс CRM -->
-    <div id="app" class="app-container hidden">
-        <aside id="sidebar" class="sidebar"></aside>
+<div class="container">
 
-        <div class="main-wrapper">
-            <header class="topbar">
-                <div class="toggle-menu" id="toggle-menu">
-                    <i class="fa-solid fa-bars"></i>
-                </div>
-                <div class="user-profile">
-                    <span id="user-role-badge" class="badge">Роль</span>
-                    <span id="user-display-name">Загрузка...</span>
-                    <button id="btn-logout" title="Выйти"><i class="fa-solid fa-right-from-bracket"></i></button>
-                </div>
-            </header>
-
-            <main id="main-content" class="content-container"></main>
-        </div>
-    </div>
-
-    <!-- Экран Авторизации и Регистрации -->
-    <div id="auth-screen" class="auth-container hidden">
-        <!-- Блок Входа -->
-        <div class="auth-card" id="login-block">
-            <div class="auth-logo">
-                <i class="fa-solid fa-bread-slice"></i>
-                <h2>Пышка CRM</h2>
-                <p>Шымкент • Внутренний доступ</p>
-            </div>
-            <form id="auth-form">
-                <div class="form-group">
-                    <label for="auth-email">Email сотрудника</label>
-                    <input type="email" id="auth-email" required placeholder="name@pyshka.kz">
-                </div>
-                <div class="form-group">
-                    <label for="auth-password">Пароль</label>
-                    <input type="password" id="auth-password" required placeholder="••••••••">
-                </div>
-                <div id="auth-error" class="auth-error hidden" style="color:#ef4444; margin-bottom:10px; font-size:0.9rem;"></div>
-                <button type="submit" class="btn btn-primary btn-block">Войти в систему</button>
-            </form>
-            <div class="auth-switch" style="text-align:center; margin-top:20px; font-size:0.9rem;">
-                Нет аккаунта? <a href="#" id="to-register" style="color:var(--primary); font-weight:600; text-decoration:none;">Зарегистрироваться</a>
-            </div>
+  <!-- NEW ORDER VIEW -->
+  <div class="view active" id="view-new">
+    <div class="layout">
+      <div>
+        <div class="card">
+          <h3>Магазин</h3>
+          <label class="field-label">Название магазина</label>
+          <input class="text-input" id="shopName" list="shopNameList" placeholder="Например: Магазин «Дастархан»">
+          <datalist id="shopNameList"></datalist>
+          <label class="field-label">ИП магазина</label>
+          <input class="text-input" id="shopIp" list="shopIpList" placeholder="ИП Иванов И.И.">
+          <datalist id="shopIpList"></datalist>
+          <label class="field-label">Адрес</label>
+          <input class="text-input" id="shopAddress" list="shopAddressList" placeholder="г. Шымкент, ул. ...">
+          <datalist id="shopAddressList"></datalist>
         </div>
 
-        <!-- Блок Регистрации -->
-        <div class="auth-card hidden" id="register-block">
-            <div class="auth-logo">
-                <i class="fa-solid fa-user-plus"></i>
-                <h2>Регистрация</h2>
-                <p>Создание учетной записи сотрудника</p>
-            </div>
-            <form id="register-form">
-                <div class="form-group">
-                    <label for="reg-name">ФИО Сотрудника</label>
-                    <input type="text" id="reg-name" required placeholder="Иван Иванов">
-                </div>
-                <div class="form-group">
-                    <label for="reg-email">Email</label>
-                    <input type="email" id="reg-email" required placeholder="name@pyshka.kz">
-                </div>
-                <div class="form-group">
-                    <label for="reg-role">Должность / Роль</label>
-                    <select id="reg-role" required>
-                        <option value="Торговый представитель">Торговый представитель</option>
-                        <option value="Водитель">Водитель</option>
-                        <option value="Бухгалтер">Бухгалтер</option>
-                        <option value="Руководитель">Руководитель</option>
-                        <option value="Администратор">Администратор</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="reg-password">Пароль (минимум 6 символов)</label>
-                    <input type="password" id="reg-password" required placeholder="••••••••">
-                </div>
-                <div id="reg-error" class="auth-error hidden" style="color:#ef4444; margin-bottom:10px; font-size:0.9rem;"></div>
-                <button type="submit" class="btn btn-primary btn-block">Создать аккаунт</button>
-            </form>
-            <div class="auth-switch" style="text-align:center; margin-top:20px; font-size:0.9rem;">
-                Уже есть аккаунт? <a href="#" id="to-login" style="color:var(--primary); font-weight:600; text-decoration:none;">Войти</a>
-            </div>
+        <div class="card">
+          <h3>Товары</h3>
+          <div class="search-wrap">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="searchInput" placeholder="Поиск товара... (например: сметана, майонез, соус)">
+          </div>
+          <div id="catalog"></div>
         </div>
-    </div>
+      </div>
 
-    <!-- Загрузка скриптов Google Maps (Библиотека геокодирования и маршрутов встроена) -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
-    
-    <script type="importmap">
-        {
-            "imports": {
-                "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
-                "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js",
-                "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js"
-            }
-        }
-    </script>
-    <script type="module" src="js/app.js"></script>
+      <div class="sticky-panel">
+        <div class="card">
+          <h3>Текущая заявка</h3>
+          <div class="order-list" id="orderList">
+            <div class="empty-order">Пока пусто. Добавьте товары слева.</div>
+          </div>
+          <div class="total-box">
+            <div class="total-row"><span>Позиций</span><span id="totalCount">0</span></div>
+            <div class="total-row main"><span>Итого</span><span id="totalSum">0 тг</span></div>
+            <div class="commission-note">Ваш процент (3%): <b id="totalCommission">0 тг</b></div>
+          </div>
+          <button class="done-btn" id="doneBtn" disabled>Готово — сохранить заявку</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HISTORY VIEW -->
+  <div class="view" id="view-history">
+    <div class="history-summary">
+      <div class="summary-card"><div class="value" id="sumOrders">0</div><div class="label">Всего заявок</div></div>
+      <div class="summary-card"><div class="value" id="sumTotal">0 тг</div><div class="label">Общая сумма продаж</div></div>
+      <div class="summary-card"><div class="value" id="sumCommission">0 тг</div><div class="label">Мой заработок (3%)</div></div>
+    </div>
+    <div id="historyList"></div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ===================== ДАННЫЕ ТОВАРОВ ===================== */
+const PRODUCTS = [
+  {cat:"Молочные продукты", name:"Сметана Ак береке", note:"20% жирности", variant:"2.2 кг", price:2100},
+  {cat:"Молочные продукты", name:"Сметана Ак береке", note:"20% жирности", variant:"600 гр", price:575},
+  {cat:"Молочные продукты", name:"Сметана Домик на Хуторке", note:"20% жирности", variant:"5 кг", price:3675},
+  {cat:"Молочные продукты", name:"Сметана Домик на Хуторке", note:"20% жирности", variant:"2.5 кг", price:2060},
+  {cat:"Молочные продукты", name:"Сметана Домик на Хуторке", note:"20% жирности", variant:"600 гр", price:515},
+  {cat:"Молочные продукты", name:"Творог", note:"18% жирности", variant:"5 кг", price:5150},
+  {cat:"Молочные продукты", name:"Йогурт", note:"15% жирности", variant:"2 кг", price:1860},
+  {cat:"Молочные продукты", name:"Йогурт", note:"15% жирности", variant:"600 гр", price:825},
+  {cat:"Молочные продукты", name:"Творожная масса с ванилью", note:"23% жирности", variant:"3 кг", price:3405},
+  {cat:"Молочные продукты", name:"Творожная масса с изюмом", note:"23% жирности", variant:"3 кг", price:3405},
+  {cat:"Молочные продукты", name:"Творожная масса с курагой", note:"23% жирности", variant:"3 кг", price:3405},
+  {cat:"Молочные продукты", name:"Творожная масса с цукатами", note:"23% жирности", variant:"3 кг", price:3405},
+
+  {cat:"Майонез и маргарины", name:"Майонез Food Expert", note:"55%", variant:"10 кг", price:8600},
+  {cat:"Майонез и маргарины", name:"Маргарин Щедрое лето", note:"60%, 20 шт/кор", variant:"500 гр", price:650, box:20},
+  {cat:"Майонез и маргарины", name:"Маргарин Щедрое лето", note:"60%, 50 шт/кор", variant:"200 гр", price:280, box:50},
+  {cat:"Майонез и маргарины", name:"Маргарин Щедрое лето", note:"72%, 10 шт/кор", variant:"1 кг", price:1520, box:10},
+  {cat:"Майонез и маргарины", name:"Маргарин Щедрое лето", note:"60%, 10 шт/кор", variant:"1 кг", price:1120, box:10},
+  {cat:"Майонез и маргарины", name:"Майонез Провансаль Н|", note:"57%", variant:"9.6 кг", price:8650},
+  {cat:"Майонез и маргарины", name:"Майонез Провансаль Н|", note:"67%", variant:"9.6 кг", price:9300},
+  {cat:"Майонез и маргарины", name:"Маргарин для песочного теста M220H", note:"82%", variant:"20 кг", price:1100},
+  {cat:"Майонез и маргарины", name:"Маргарин для слоёного теста", note:"82%", variant:"10 кг", price:1100},
+  {cat:"Майонез и маргарины", name:"Маргарин для кремов", note:"84%", variant:"20 кг", price:1100},
+
+  {cat:"Жир для фритюра", name:"Жир для фритюра жидкий", note:"канистра", variant:"10 л / 9.1 кг", price:9700},
+  {cat:"Жир для фритюра", name:"Жир для фритюра жидкий К800", note:"", variant:"5 л / 4.3 кг", price:4800},
+
+  {cat:"Соусы", name:"Соус сырный (маленький)", note:"", variant:"порционный", price:52},
+  {cat:"Соусы", name:"Соус чесночный (маленький)", note:"", variant:"порционный", price:52},
+  {cat:"Соусы", name:"Соус кетчуп (маленький)", note:"", variant:"порционный", price:52},
+  {cat:"Соусы", name:"Соус горчичный оригинальный", note:"20%", variant:"1 кг", price:1310},
+  {cat:"Соусы", name:"Соус бургерный", note:"30%", variant:"1 кг", price:1400},
+  {cat:"Соусы", name:"Соус цезарь сырный", note:"42%", variant:"1 кг", price:1370},
+  {cat:"Соусы", name:"Соус сырный", note:"42%", variant:"1 кг", price:1350},
+  {cat:"Соусы", name:"Соус сливочно-чесночный", note:"42%", variant:"1 кг", price:1370},
+  {cat:"Соусы", name:"Соус барбекю", note:"", variant:"1 кг", price:1300},
+
+  {cat:"Напитки и соки", name:"Кофе Vinut капучино", note:"24 шт/кор", variant:"порция", price:615, box:24},
+  {cat:"Напитки и соки", name:"Кофе Vinut латте", note:"24 шт/кор", variant:"порция", price:615, box:24},
+  {cat:"Напитки и соки", name:"Кофе Vinut матча", note:"24 шт/кор", variant:"порция", price:615, box:24},
+  {cat:"Напитки и соки", name:"Кофе Vietnamese", note:"24 шт/кор", variant:"250 мл", price:455, box:24},
+  {cat:"Напитки и соки", name:"Bubble Tea", note:"24 шт/кор", variant:"320 мл", price:485, box:24},
+  {cat:"Напитки и соки", name:"Сок Ананас", note:"натуральный, 24 шт/кор", variant:"порция", price:410, box:24},
+  {cat:"Напитки и соки", name:"Сок Манго", note:"натуральный, 24 шт/кор", variant:"порция", price:410, box:24},
+  {cat:"Напитки и соки", name:"Сок Микс фруктов", note:"натуральный, 24 шт/кор", variant:"порция", price:410, box:24},
+  {cat:"Напитки и соки", name:"Сок Персик", note:"натуральный, 24 шт/кор", variant:"порция", price:410, box:24},
+  {cat:"Напитки и соки", name:"Сок Апельсин", note:"натуральный, 24 шт/кор", variant:"порция", price:410, box:24},
+  {cat:"Напитки и соки", name:"Сок Красный апельсин", note:"натуральный, 24 шт/кор", variant:"порция", price:410, box:24},
+  {cat:"Напитки и соки", name:"Сок Маракуйя", note:"натуральный, 24 шт/кор", variant:"порция", price:410, box:24},
+  {cat:"Напитки и соки", name:"Сок Гранат", note:"натуральный, 24 шт/кор", variant:"порция", price:410, box:24},
+
+  {cat:"Масло", name:"Масло завод", note:"3 шт/кор", variant:"5 л", price:4650, box:3},
+];
+PRODUCTS.forEach((p,i)=> p.id = "p"+i);
+
+const COMMISSION_RATE = 0.03;
+
+/* ===================== STATE ===================== */
+let currentOrder = {}; // id -> {product, qty}
+
+const fmt = n => new Intl.NumberFormat('ru-RU').format(Math.round(n)) + " тг";
+
+/* ===================== CATALOG RENDER ===================== */
+const catalogEl = document.getElementById('catalog');
+
+function renderCatalog(filter=""){
+  const f = filter.trim().toLowerCase();
+  const byCat = {};
+  PRODUCTS.forEach(p=>{
+    const hay = (p.name+" "+p.note+" "+p.variant+" "+p.cat).toLowerCase();
+    if(f && !hay.includes(f)) return;
+    (byCat[p.cat] = byCat[p.cat]||[]).push(p);
+  });
+  const cats = Object.keys(byCat);
+  if(cats.length===0){
+    catalogEl.innerHTML = `<div class="no-results">Ничего не найдено. Попробуйте другой запрос 🔍</div>`;
+    return;
+  }
+  catalogEl.innerHTML = cats.map(cat=>{
+    const rows = byCat[cat].map(p=>{
+      const qty = currentOrder[p.id] ? currentOrder[p.id].qty : 0;
+      return `
+      <div class="item-row" data-id="${p.id}">
+        <div class="item-info">
+          <div class="item-name">${p.name}${qty>0?` <span style="color:var(--success)">✓ x${qty}</span>`:''}</div>
+          <div class="item-meta">
+            <span>${p.variant}</span>
+            ${p.note?`<span class="badge">${p.note}</span>`:''}
+          </div>
+        </div>
+        <div class="item-right">
+          <div class="item-price">${fmt(p.price)}</div>
+          <button class="add-btn" data-add="${p.id}">+</button>
+        </div>
+      </div>`;
+    }).join("");
+    return `<div class="category"><div class="category-title">${cat}</div>${rows}</div>`;
+  }).join("");
+}
+
+catalogEl.addEventListener('click', e=>{
+  const btn = e.target.closest('[data-add]');
+  if(!btn) return;
+  addToOrder(btn.dataset.add);
+});
+
+document.getElementById('searchInput').addEventListener('input', e=>{
+  renderCatalog(e.target.value);
+});
+
+/* ===================== ORDER LOGIC ===================== */
+function addToOrder(id){
+  const product = PRODUCTS.find(p=>p.id===id);
+  if(!currentOrder[id]) currentOrder[id] = {product, qty:0};
+  currentOrder[id].qty += 1;
+  renderOrder();
+  renderCatalog(document.getElementById('searchInput').value);
+}
+function changeQty(id, delta){
+  if(!currentOrder[id]) return;
+  currentOrder[id].qty += delta;
+  if(currentOrder[id].qty <= 0) delete currentOrder[id];
+  renderOrder();
+  renderCatalog(document.getElementById('searchInput').value);
+}
+function removeItem(id){
+  delete currentOrder[id];
+  renderOrder();
+  renderCatalog(document.getElementById('searchInput').value);
+}
+
+function renderOrder(){
+  const list = document.getElementById('orderList');
+  const ids = Object.keys(currentOrder);
+  if(ids.length===0){
+    list.innerHTML = `<div class="empty-order">Пока пусто. Добавьте товары слева.</div>`;
+  } else {
+    list.innerHTML = ids.map(id=>{
+      const {product, qty} = currentOrder[id];
+      const sum = product.price * qty;
+      return `
+      <div class="order-item" data-id="${id}">
+        <div style="flex:1">
+          <div class="oi-name">${product.name}</div>
+          <div class="oi-meta">${product.variant} · ${fmt(product.price)}/шт</div>
+        </div>
+        <div class="qty-control">
+          <button data-dec="${id}">−</button>
+          <span>${qty}</span>
+          <button data-inc="${id}">+</button>
+        </div>
+        <div class="oi-sum">${fmt(sum)}</div>
+        <button class="remove-btn" data-remove="${id}">✕</button>
+      </div>`;
+    }).join("");
+  }
+  let total = 0, count = 0;
+  ids.forEach(id=>{ total += currentOrder[id].product.price * currentOrder[id].qty; count += currentOrder[id].qty; });
+  document.getElementById('totalCount').textContent = count;
+  document.getElementById('totalSum').textContent = fmt(total);
+  document.getElementById('totalCommission').textContent = fmt(total*COMMISSION_RATE);
+  document.getElementById('doneBtn').disabled = ids.length===0;
+}
+
+document.getElementById('orderList').addEventListener('click', e=>{
+  const inc = e.target.closest('[data-inc]');
+  const dec = e.target.closest('[data-dec]');
+  const rem = e.target.closest('[data-remove]');
+  if(inc) changeQty(inc.dataset.inc, 1);
+  if(dec) changeQty(dec.dataset.dec, -1);
+  if(rem) removeItem(rem.dataset.remove);
+});
+
+/* ===================== SAVE ORDER / HISTORY ===================== */
+function getHistory(){
+  try{ return JSON.parse(localStorage.getItem('zayavki_history')||'[]'); }catch(e){ return []; }
+}
+function saveHistory(h){ localStorage.setItem('zayavki_history', JSON.stringify(h)); }
+
+function getShopSuggestions(){
+  try{ return JSON.parse(localStorage.getItem('zayavki_shops')||'{"name":[],"ip":[],"address":[]}'); }
+  catch(e){ return {name:[],ip:[],address:[]}; }
+}
+function saveShopSuggestion(name, ip, address){
+  const s = getShopSuggestions();
+  [[s.name,name],[s.ip,ip],[s.address,address]].forEach(([arr,val])=>{
+    if(val && !arr.includes(val)) arr.unshift(val);
+  });
+  s.name = s.name.slice(0,30); s.ip = s.ip.slice(0,30); s.address = s.address.slice(0,30);
+  localStorage.setItem('zayavki_shops', JSON.stringify(s));
+  renderShopDatalists();
+}
+function renderShopDatalists(){
+  const s = getShopSuggestions();
+  document.getElementById('shopNameList').innerHTML = s.name.map(v=>`<option value="${v.replace(/"/g,'&quot;')}">`).join('');
+  document.getElementById('shopIpList').innerHTML = s.ip.map(v=>`<option value="${v.replace(/"/g,'&quot;')}">`).join('');
+  document.getElementById('shopAddressList').innerHTML = s.address.map(v=>`<option value="${v.replace(/"/g,'&quot;')}">`).join('');
+}
+
+document.getElementById('doneBtn').addEventListener('click', ()=>{
+  const name = document.getElementById('shopName').value.trim();
+  const ip = document.getElementById('shopIp').value.trim();
+  const address = document.getElementById('shopAddress').value.trim();
+  if(!name){ showToast('Укажите название магазина', true); return; }
+
+  const items = Object.values(currentOrder).map(({product,qty})=>({
+    name: product.name, variant: product.variant, note: product.note,
+    price: product.price, qty, sum: product.price*qty
+  }));
+  const total = items.reduce((a,i)=>a+i.sum,0);
+  const now = new Date();
+
+  const order = {
+    id: 'o'+Date.now(),
+    date: now.toISOString(),
+    dateLabel: now.toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}),
+    shop: {name, ip, address},
+    items, total,
+    commission: total*COMMISSION_RATE
+  };
+
+  const history = getHistory();
+  history.unshift(order);
+  saveHistory(history);
+  saveShopSuggestion(name, ip, address);
+
+  currentOrder = {};
+  document.getElementById('shopName').value='';
+  document.getElementById('shopIp').value='';
+  document.getElementById('shopAddress').value='';
+  renderOrder();
+  renderCatalog(document.getElementById('searchInput').value);
+  renderHistory();
+  updateHeaderStat();
+  showToast('Заявка сохранена ✓');
+});
+
+function showToast(msg, isError){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = isError ? 'var(--danger)' : 'var(--success)';
+  t.classList.add('show');
+  setTimeout(()=> t.classList.remove('show'), 2200);
+}
+
+/* ===================== HISTORY RENDER ===================== */
+function renderHistory(){
+  const history = getHistory();
+  const listEl = document.getElementById('historyList');
+
+  const totalSum = history.reduce((a,o)=>a+o.total,0);
+  const totalCommission = history.reduce((a,o)=>a+o.commission,0);
+  document.getElementById('sumOrders').textContent = history.length;
+  document.getElementById('sumTotal').textContent = fmt(totalSum);
+  document.getElementById('sumCommission').textContent = fmt(totalCommission);
+
+  if(history.length===0){
+    listEl.innerHTML = `<div class="empty-history">Заявок пока нет. Оформите первую во вкладке «Новая заявка».</div>`;
+    return;
+  }
+
+  listEl.innerHTML = history.map(o=>`
+    <div class="order-card">
+      <div class="order-card-top">
+        <div>
+          <div class="order-card-shop">${o.shop.name}</div>
+          <div class="order-card-date">${o.dateLabel}</div>
+          <div class="order-card-meta">${o.shop.ip ? o.shop.ip+' · ' : ''}${o.shop.address||''}</div>
+        </div>
+        <div class="order-card-right">
+          <div class="order-card-total">${fmt(o.total)}</div>
+          <div class="order-card-commission">+ ${fmt(o.commission)} (3%)</div>
+        </div>
+      </div>
+      <button class="expand-btn" data-toggle="${o.id}">Показать товары (${o.items.length})</button>
+      <div class="order-details" id="details-${o.id}">
+        <table>
+          <thead><tr><th>Товар</th><th>Кол-во</th><th>Цена</th><th>Сумма</th></tr></thead>
+          <tbody>
+            ${o.items.map(i=>`<tr><td>${i.name} <span style="color:var(--muted)">(${i.variant})</span></td><td>${i.qty}</td><td>${fmt(i.price)}</td><td>${fmt(i.sum)}</td></tr>`).join('')}
+          </tbody>
+        </table>
+        <button class="delete-order" data-del="${o.id}">Удалить эту заявку</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+document.getElementById('historyList').addEventListener('click', e=>{
+  const toggle = e.target.closest('[data-toggle]');
+  const del = e.target.closest('[data-del]');
+  if(toggle){
+    const el = document.getElementById('details-'+toggle.dataset.toggle);
+    el.classList.toggle('show');
+    toggle.textContent = el.classList.contains('show') ? 'Скрыть товары' : toggle.textContent.replace('Скрыть товары','Показать товары');
+  }
+  if(del){
+    if(confirm('Удалить эту заявку из истории?')){
+      let history = getHistory();
+      history = history.filter(o=>o.id!==del.dataset.del);
+      saveHistory(history);
+      renderHistory();
+      updateHeaderStat();
+    }
+  }
+});
+
+function updateHeaderStat(){
+  const history = getHistory();
+  const totalCommission = history.reduce((a,o)=>a+o.commission,0);
+  document.getElementById('headerCommission').textContent = `Заработано всего: ${fmt(totalCommission)}`;
+}
+
+/* ===================== TABS ===================== */
+document.querySelectorAll('.tab').forEach(tab=>{
+  tab.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    document.getElementById('view-'+tab.dataset.view).classList.add('active');
+    if(tab.dataset.view==='history') renderHistory();
+  });
+});
+
+/* ===================== INIT ===================== */
+renderCatalog();
+renderOrder();
+renderShopDatalists();
+renderHistory();
+updateHeaderStat();
+</script>
 </body>
 </html>
